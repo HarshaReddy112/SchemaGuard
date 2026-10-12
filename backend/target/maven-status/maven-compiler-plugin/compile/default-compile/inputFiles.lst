@@ -1,0 +1,16 @@
+C:\Users\harsh\SchemaGuard\backend\src\main\java\com\schemaguard\controller\DatabaseController.java
+C:\Users\harsh\SchemaGuard\backend\src\main\java\com\schemaguard\controller\SchemaController.java
+C:\Users\harsh\SchemaGuard\backend\src\main\java\com\schemaguard\controller\SchemaDiffController.java
+C:\Users\harsh\SchemaGuard\backend\src\main\java\com\schemaguard\diff\SchemaChange.java
+C:\Users\harsh\SchemaGuard\backend\src\main\java\com\schemaguard\diff\SchemaDiffEngine.java
+C:\Users\harsh\SchemaGuard\backend\src\main\java\com\schemaguard\diff\SchemaDiffResult.java
+C:\Users\harsh\SchemaGuard\backend\src\main\java\com\schemaguard\model\ColumnSchema.java
+C:\Users\harsh\SchemaGuard\backend\src\main\java\com\schemaguard\model\ConstraintSchema.java
+C:\Users\harsh\SchemaGuard\backend\src\main\java\com\schemaguard\model\DatabaseSchema.java
+C:\Users\harsh\SchemaGuard\backend\src\main\java\com\schemaguard\model\IndexSchema.java
+C:\Users\harsh\SchemaGuard\backend\src\main\java\com\schemaguard\model\SchemaDiffRequest.java
+C:\Users\harsh\SchemaGuard\backend\src\main\java\com\schemaguard\model\SchemaParseRequest.java
+C:\Users\harsh\SchemaGuard\backend\src\main\java\com\schemaguard\model\TableSchema.java
+C:\Users\harsh\SchemaGuard\backend\src\main\java\com\schemaguard\parser\MySqlSchemaParser.java
+C:\Users\harsh\SchemaGuard\backend\src\main\java\com\schemaguard\SchemaGuardApplication.java
+C:\Users\harsh\SchemaGuard\backend\src\main\java\com\schemaguard\service\DatabaseHealthService.java

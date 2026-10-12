@@ -1,0 +1,16 @@
+com\schemaguard\model\ColumnSchema.class
+com\schemaguard\model\SchemaDiffRequest.class
+com\schemaguard\service\DatabaseHealthService.class
+com\schemaguard\controller\SchemaController.class
+com\schemaguard\controller\SchemaDiffController.class
+com\schemaguard\diff\SchemaChange.class
+com\schemaguard\diff\SchemaDiffResult.class
+com\schemaguard\model\IndexSchema.class
+com\schemaguard\model\SchemaParseRequest.class
+com\schemaguard\model\TableSchema.class
+com\schemaguard\model\ConstraintSchema.class
+com\schemaguard\controller\DatabaseController.class
+com\schemaguard\diff\SchemaDiffEngine.class
+com\schemaguard\model\DatabaseSchema.class
+com\schemaguard\parser\MySqlSchemaParser.class
+com\schemaguard\SchemaGuardApplication.class
