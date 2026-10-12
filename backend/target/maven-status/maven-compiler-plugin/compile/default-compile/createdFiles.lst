@@ -1,9 +1,11 @@
 com\schemaguard\model\ColumnSchema.class
 com\schemaguard\model\SchemaDiffRequest.class
 com\schemaguard\service\DatabaseHealthService.class
+com\schemaguard\config\CorsConfig.class
 com\schemaguard\controller\SchemaController.class
 com\schemaguard\controller\SchemaDiffController.class
 com\schemaguard\diff\SchemaChange.class
+com\schemaguard\config\CorsConfig$1.class
 com\schemaguard\diff\SchemaDiffResult.class
 com\schemaguard\model\IndexSchema.class
 com\schemaguard\model\SchemaParseRequest.class
