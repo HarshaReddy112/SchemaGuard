@@ -22,6 +22,8 @@ function App() {
     const [report, setReport] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const [riskFilter, setRiskFilter] = useState("ALL");
+    const [sortByRisk, setSortByRisk] = useState(true);
 
     async function analyzeMigration() {
         if (!oldSql.trim() || !newSql.trim()) {
@@ -66,6 +68,21 @@ function App() {
     }
 
     const riskClass = report?.overallRisk?.toLowerCase() || "none";
+    
+    const riskOrder = {
+    HIGH: 0,
+    MEDIUM: 1,
+    LOW: 2
+    };
+
+    const visibleChanges = (report?.changes || []).filter(change =>
+        riskFilter === "ALL" || change.riskLevel === riskFilter)
+    .sort((a, b) =>
+        sortByRisk
+            ? (riskOrder[a.riskLevel] ?? 3) -
+              (riskOrder[b.riskLevel] ?? 3)
+            : 0
+    );
 
     return (
         <div className="app-shell">
@@ -231,47 +248,85 @@ function App() {
                             </div>
 
                             {report.changes.length === 0 ? (
-                                <div className="empty-state">
-                                    <span>✓</span>
-                                    <strong>Schemas match</strong>
-                                    <p>No changes were detected between these definitions.</p>
+    <div className="empty-state">
+        <span>✓</span>
+        <strong>Schemas match</strong>
+        <p>No changes were detected between these definitions.</p>
+    </div>
+) : (
+    <>
+        <div className="change-controls">
+            <label>
+                Risk level
+                <select
+                    value={riskFilter}
+                    onChange={event => setRiskFilter(event.target.value)}
+                >
+                    <option value="ALL">All risks</option>
+                    <option value="HIGH">High</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="LOW">Low</option>
+                </select>
+            </label>
+
+            <label className="sort-control">
+                <input
+                    type="checkbox"
+                    checked={sortByRisk}
+                    onChange={event => setSortByRisk(event.target.checked)}
+                />
+                High risk first
+            </label>
+        </div>
+
+        {visibleChanges.length === 0 ? (
+            <div className="empty-state">
+                <strong>No matching changes</strong>
+                <p>Try selecting a different risk level.</p>
+            </div>
+        ) : (
+            <div className="change-list">
+                {visibleChanges.map((change, index) => (
+                    <article
+                        className="change-item"
+                        key={`${change.objectType}-${change.tableName}-${change.objectName}-${index}`}
+                    >
+                        <div className="change-main">
+                            <div className="change-title">
+                                <strong>{change.objectName}</strong>
+                                <span className={`risk-tag tag-${change.riskLevel.toLowerCase()}`}>
+                                    {change.riskLevel}
+                                </span>
+                            </div>
+
+                            <p>
+                                {change.tableName} · {change.objectType} · {change.changeType}
+                            </p>
+
+                            <span className="change-message">
+                                {change.message}
+                            </span>
+
+                            <div className="value-comparison">
+                                <div>
+                                    <span>OLD</span>
+                                    <code>{change.oldValue ?? "—"}</code>
                                 </div>
-                            ) : (
-                                <div className="change-list">
-                                    {report.changes.map((change, index) => (
-                                        <article
-                                            className="change-item"
-                                            key={`${change.objectType}-${change.tableName}-${change.objectName}-${index}`}
-                                        >
-                                            <div className="change-main">
-                                                <div className="change-title">
-                                                    <strong>{change.objectName}</strong>
-                                                    <span className={`risk-tag tag-${change.riskLevel.toLowerCase()}`}>
-                                                        {change.riskLevel}
-                                                    </span>
-                                                </div>
-                                                <p>
-                                                    {change.tableName} · {change.objectType} · {change.changeType}
-                                                </p>
-                                                <span className="change-message">
-                                                    {change.message}
-                                                </span>
-                                                <div className="value-comparison">
-                                                    <div>
-                                                        <span>OLD</span>
-                                                        <code>{change.oldValue ?? "—"}</code>
-                                                    </div>
-                                                    <span className="change-arrow">→</span>
-                                                    <div>
-                                                        <span>NEW</span>
-                                                        <code>{change.newValue ?? "—"}</code>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </article>
-                                    ))}
+
+                                <span className="change-arrow">→</span>
+
+                                <div>
+                                    <span>NEW</span>
+                                    <code>{change.newValue ?? "—"}</code>
                                 </div>
-                            )}
+                            </div>
+                        </div>
+                    </article>
+                ))}
+            </div>
+        )}
+    </>
+)}
                         </div>
 
                         <div className="result-panel recommendations-panel">

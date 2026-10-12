@@ -681,3 +681,41 @@
         break-inside: avoid;
     }
 }
+
+.change-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 23px;
+    border-bottom: 1px solid #edf0f5;
+    background: #fafbfe;
+}
+
+.change-controls label {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    color: #657087;
+    font-size: 12px;
+}
+
+.change-controls select {
+    padding: 8px 10px;
+    border: 1px solid #e1e5ef;
+    border-radius: 7px;
+    color: #354052;
+    background: #fff;
+    font-size: 12px;
+}
+
+.sort-control input {
+    accent-color: #354ee8;
+}
+
+@media (max-width: 480px) {
+    .change-controls {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}
