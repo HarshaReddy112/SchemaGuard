@@ -1,0 +1,25 @@
+
+# Java and Maven
+target/
+*.class
+
+# React and Node.js
+frontend/node_modules/
+frontend/dist/
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# IDE files
+.vscode/
+.idea/
+
+backend/target/
+*.class
+frontend/node_modules/
+frontend/dist/
+.env
+.env.*
+!.env.example
