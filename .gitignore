@@ -32,3 +32,12 @@ Desktop.ini
 # Local configuration
 application-local.properties
 application-secret.properties
+
+
+backend/target/
+*.class
+frontend/node_modules/
+frontend/dist/
+.env
+.env.*
+!.env.example
