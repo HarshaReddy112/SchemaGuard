@@ -719,3 +719,241 @@
         flex-direction: column;
     }
 }
+
+
+.visual-comparison {
+    margin-top: 20px;
+}
+
+.comparison-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    padding: 14px 23px;
+    border-bottom: 1px solid #edf0f5;
+}
+
+.comparison-legend > span {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: #687287;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.legend-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+}
+
+.legend-dot.added {
+    background: #219768;
+}
+
+.legend-dot.removed {
+    background: #d64b4b;
+}
+
+.legend-dot.modified {
+    background: #d89a30;
+}
+
+.comparison-column-headings {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    padding: 13px 23px;
+    background: #fafbfe;
+    border-bottom: 1px solid #edf0f5;
+}
+
+.comparison-column-headings > div {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.7px;
+    text-transform: uppercase;
+}
+
+.old-heading {
+    color: #b77922;
+}
+
+.new-heading {
+    color: #4056d9;
+}
+
+.comparison-row {
+    padding: 20px 23px;
+    border-bottom: 1px solid #edf0f5;
+    border-left: 3px solid transparent;
+}
+
+.comparison-row:last-child {
+    border-bottom: 0;
+}
+
+.comparison-row.change-added {
+    border-left-color: #219768;
+}
+
+.comparison-row.change-removed {
+    border-left-color: #d64b4b;
+}
+
+.comparison-row.change-modified {
+    border-left-color: #d89a30;
+}
+
+.comparison-object {
+    margin-bottom: 14px;
+}
+
+.comparison-object-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+
+.comparison-object-title strong {
+    color: #293246;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.comparison-object > p {
+    margin: 6px 0 8px;
+    color: #858da0;
+    font-size: 11px;
+}
+
+.change-kind {
+    display: inline-block;
+    padding: 4px 7px;
+    border-radius: 5px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.kind-added {
+    color: #16704a;
+    background: #e5f8ed;
+}
+
+.kind-removed {
+    color: #a52f2f;
+    background: #ffebeb;
+}
+
+.kind-modified {
+    color: #8b5a13;
+    background: #fff2d8;
+}
+
+.comparison-values {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr);
+    align-items: stretch;
+    gap: 10px;
+}
+
+.comparison-value {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid #e6e9f0;
+    border-radius: 9px;
+}
+
+.old-value {
+    background: #fffaf2;
+    border-color: #f0dfba;
+}
+
+.new-value {
+    background: #f4f6ff;
+    border-color: #dce2ff;
+}
+
+.change-removed .old-value {
+    background: #fff4f2;
+    border-color: #f1d2ce;
+}
+
+.change-added .new-value {
+    background: #eefaf4;
+    border-color: #ccebdc;
+}
+
+.value-label {
+    color: #818a9c;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+
+.comparison-value code {
+    max-width: 100%;
+    color: #3f485b;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 11px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.comparison-connector {
+    display: grid;
+    place-items: center;
+    color: #8d96a8;
+    font-size: 17px;
+}
+
+.comparison-message {
+    margin: 12px 0 0;
+    color: #626d81;
+    font-size: 12px;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+}
+
+.comparison-empty {
+    padding: 28px 23px;
+    color: #7b8497;
+    font-size: 13px;
+    text-align: center;
+}
+
+@media (max-width: 600px) {
+    .comparison-column-headings {
+        gap: 8px;
+        padding: 12px;
+    }
+
+    .comparison-row {
+        padding: 16px 12px;
+    }
+
+    .comparison-values {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+    }
+
+    .comparison-connector {
+        transform: rotate(90deg);
+        min-height: 18px;
+    }
+
+    .comparison-legend {
+        gap: 12px;
+        padding: 12px;
+    }
+}

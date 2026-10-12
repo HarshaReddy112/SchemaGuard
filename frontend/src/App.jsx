@@ -1,5 +1,6 @@
 import { useState } from "react";
 import "./App.css";
+import SchemaComparison from "./SchemaComparison";
 
 const API_URL = "http://localhost:8080/api/v1/schema/diff";
 
@@ -235,6 +236,8 @@ function App() {
                                 <small>Lower estimated impact</small>
                             </div>
                         </div>
+
+                        <SchemaComparison changes={visibleChanges} />
 
                         <div className="result-panel">
                             <div className="panel-heading">
