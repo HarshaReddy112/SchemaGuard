@@ -8,7 +8,9 @@ import com.schemaguard.model.IndexSchema;
 import com.schemaguard.model.TableSchema;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.TreeSet;
 
@@ -64,12 +66,18 @@ public class SchemaDiffEngine {
         TreeSet<String> columnNames = new TreeSet<>();
         columnNames.addAll(oldTable.columns().keySet());
         columnNames.addAll(newTable.columns().keySet());
+        Map<String, String> possibleRenames =
+                detectPossibleRenames(oldTable, newTable);
+        var renameTargets = new java.util.HashSet<>(possibleRenames.values());
 
         for (String columnName : columnNames) {
             ColumnSchema oldColumn = oldTable.columns().get(columnName);
             ColumnSchema newColumn = newTable.columns().get(columnName);
 
             if (oldColumn == null) {
+                if (renameTargets.contains(columnName)) {
+                    continue;
+                }
                 changes.add(new SchemaChange(
                         "COLUMN", "ADDED", tableName, columnName,
                         null, newColumn.dataType(),
@@ -80,6 +88,20 @@ public class SchemaDiffEngine {
             }
 
             if (newColumn == null) {
+                String possibleNewName = possibleRenames.get(columnName);
+                if (possibleNewName != null) {
+                    ColumnSchema renamedColumn =
+                            newTable.columns().get(possibleNewName);
+                    changes.add(new SchemaChange(
+                            "COLUMN", "POSSIBLE_RENAME", tableName, columnName,
+                            oldColumn.dataType(),
+                            possibleNewName + ": " + renamedColumn.dataType(),
+                            "HIGH",
+                            "Possible column rename to " + possibleNewName
+                                    + "; verify it is not a drop and add"
+                    ));
+                    continue;
+                }
                 changes.add(new SchemaChange(
                         "COLUMN", "REMOVED", tableName, columnName,
                         oldColumn.dataType(), null,
@@ -93,6 +115,51 @@ public class SchemaDiffEngine {
                     tableName, oldColumn, newColumn, changes
             );
         }
+    }
+
+    private Map<String, String> detectPossibleRenames(
+            TableSchema oldTable,
+            TableSchema newTable
+    ) {
+        Map<String, String> possibleRenames = new HashMap<>();
+        Map<String, Integer> addedCandidatesByType = new HashMap<>();
+
+        for (ColumnSchema newColumn : newTable.columns().values()) {
+            if (!oldTable.columns().containsKey(newColumn.name())) {
+                String type = newColumn.dataType().toUpperCase(
+                        java.util.Locale.ROOT);
+                addedCandidatesByType.merge(type, 1, Integer::sum);
+            }
+        }
+        for (ColumnSchema oldColumn : oldTable.columns().values()) {
+            if (newTable.columns().containsKey(oldColumn.name())) {
+                continue;
+            }
+            String type = oldColumn.dataType().toUpperCase(
+                    java.util.Locale.ROOT);
+            if (addedCandidatesByType.getOrDefault(type, 0) != 1) {
+                continue;
+            }
+            List<ColumnSchema> matchingAdded = newTable.columns().values()
+                    .stream()
+                    .filter(column -> !oldTable.columns()
+                            .containsKey(column.name()))
+                    .filter(column -> column.dataType()
+                            .equalsIgnoreCase(oldColumn.dataType()))
+                    .toList();
+            List<ColumnSchema> matchingRemoved = oldTable.columns().values()
+                    .stream()
+                    .filter(column -> !newTable.columns()
+                            .containsKey(column.name()))
+                    .filter(column -> column.dataType()
+                            .equalsIgnoreCase(oldColumn.dataType()))
+                    .toList();
+            if (matchingAdded.size() == 1 && matchingRemoved.size() == 1) {
+                possibleRenames.put(
+                        oldColumn.name(), matchingAdded.get(0).name());
+            }
+        }
+        return possibleRenames;
     }
 
     private void compareColumnProperties(
@@ -276,7 +343,9 @@ public class SchemaDiffEngine {
         return constraint.type()
                 + ", columns=" + String.join(", ", constraint.columns())
                 + ", references=" + constraint.referencedTable()
-                + "(" + String.join(", ", constraint.referencedColumns()) + ")";
+                + "(" + String.join(", ", constraint.referencedColumns()) + ")"
+                + (constraint.expression() == null
+                        ? "" : ", expression=" + constraint.expression());
     }
 
 }

@@ -7,6 +7,16 @@ public record ConstraintSchema(
         String type,
         List<String> columns,
         String referencedTable,
-        List<String> referencedColumns
+        List<String> referencedColumns,
+        String expression
 ) {
+    public ConstraintSchema(
+            String name,
+            String type,
+            List<String> columns,
+            String referencedTable,
+            List<String> referencedColumns
+    ) {
+        this(name, type, columns, referencedTable, referencedColumns, null);
+    }
 }

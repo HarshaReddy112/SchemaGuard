@@ -17,7 +17,8 @@ class DependencyScanServiceTest {
 
     @Test
     void discoversSqlReferencesAndRegistersSourceEvidence() throws Exception {
-        DependencyRegistryService registry = new DependencyRegistryService();
+        DependencyRegistryService registry =
+                TestDatabase.newDependencyRegistryService();
         registry.registerApplication(new ApplicationRegistrationRequest(
                 "billing-api",
                 "Billing API",
@@ -57,7 +58,8 @@ class DependencyScanServiceTest {
     @Test
     void scansPythonQueriesWithoutTreatingImportsAsDatabaseDependencies()
             throws Exception {
-        DependencyRegistryService registry = new DependencyRegistryService();
+        DependencyRegistryService registry =
+                TestDatabase.newDependencyRegistryService();
         registry.registerApplication(new ApplicationRegistrationRequest(
                 "flask-api",
                 "Flask API",
@@ -92,6 +94,31 @@ class DependencyScanServiceTest {
         ));
         assertTrue(result.dependencies().stream().noneMatch(dependency ->
                 dependency.tableName().toLowerCase().startsWith("flas")
+        ));
+    }
+
+    @Test
+    void rescanReplacesStaleSourceEvidence() throws Exception {
+        DependencyRegistryService registry =
+                TestDatabase.newDependencyRegistryService();
+        registry.registerApplication(new ApplicationRegistrationRequest(
+                "rescan-api",
+                "Rescan API",
+                "billing"
+        ));
+        Path source = repository.resolve("Repository.java");
+        Files.writeString(source, "SELECT id FROM old_invoices");
+        DependencyScanService scanner = new DependencyScanService(registry);
+
+        scanner.scanRepository("rescan-api", repository.toString());
+        Files.writeString(source, "SELECT id FROM new_invoices");
+        var result = scanner.scanRepository("rescan-api", repository.toString());
+
+        assertTrue(result.dependencies().stream().noneMatch(dependency ->
+                dependency.tableName().equals("old_invoices")
+        ));
+        assertTrue(result.dependencies().stream().anyMatch(dependency ->
+                dependency.tableName().equals("new_invoices")
         ));
     }
 }

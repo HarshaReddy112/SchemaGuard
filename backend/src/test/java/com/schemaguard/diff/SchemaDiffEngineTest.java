@@ -473,5 +473,32 @@ void identicalSchemasProduceNoMigrationRisk() {
     assertFalse(result.recommendations().isEmpty());
 }
 
+@Test
+void identifiesUnambiguousSameTypeColumnRenameAsPossible() {
+    DatabaseSchema oldSchema = parser.parse("""
+            CREATE TABLE users (
+                id BIGINT NOT NULL,
+                email VARCHAR(255),
+                PRIMARY KEY (id)
+            );
+            """);
+    DatabaseSchema newSchema = parser.parse("""
+            CREATE TABLE users (
+                id BIGINT NOT NULL,
+                contact_email VARCHAR(255),
+                PRIMARY KEY (id)
+            );
+            """);
+
+    List<SchemaChange> changes =
+            engine.compare(oldSchema, newSchema).changes();
+
+    assertEquals(1, changes.size());
+    assertEquals("POSSIBLE_RENAME", changes.get(0).changeType());
+    assertEquals("email", changes.get(0).objectName());
+    assertEquals("contact_email: VARCHAR(255)", changes.get(0).newValue());
+    assertTrue(changes.get(0).message().contains("Possible column rename"));
+}
+
 
 }

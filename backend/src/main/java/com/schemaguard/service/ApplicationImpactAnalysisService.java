@@ -42,7 +42,7 @@ public class ApplicationImpactAnalysisService {
                         null,
                         "UNKNOWN",
                         change.riskLevel(),
-                        "No direct application dependency was discovered for this schema change; this does not prove that no dependency exists.",
+                        "manual verification required: no direct application dependency was discovered for this schema change; this does not prove that no dependency exists.",
                         "Review all registered repositories, dynamic SQL, ORM mappings, stored procedures, and integration tests before deployment."
                 ));
                 continue;

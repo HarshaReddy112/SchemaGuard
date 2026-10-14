@@ -101,6 +101,11 @@ public class GitHubRepositoryArchiveService {
         return new Repository(matcher.group(1), repositoryName);
     }
 
+    static String repositoryLabel(String repositoryUrl) {
+        Repository repository = parseRepositoryUrl(repositoryUrl);
+        return repository.owner() + "/" + repository.name();
+    }
+
     private static String fetchDefaultBranch(Repository repository)
             throws IOException, InterruptedException {
         URI uri = URI.create(

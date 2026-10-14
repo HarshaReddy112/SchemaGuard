@@ -41,7 +41,8 @@ class SchemaDiffControllerIntegrationTest {
         String request = """
                 {
                   "oldSql": "CREATE TABLE users (id BIGINT NOT NULL, name VARCHAR(100), PRIMARY KEY (id));",
-                  "newSql": "CREATE TABLE users (id BIGINT NOT NULL, name VARCHAR(50), PRIMARY KEY (id));"
+                  "newSql": "CREATE TABLE users (id BIGINT NOT NULL, name VARCHAR(50), PRIMARY KEY (id));",
+                  "databaseName": "schemaguard"
                 }
                 """;
 

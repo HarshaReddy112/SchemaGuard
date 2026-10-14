@@ -17,26 +17,44 @@ import java.util.regex.Pattern;
 
 public class MySqlSchemaParser {
 
+    private static final String QUALIFIED_IDENTIFIER =
+            "(?:`[^`]+`|[\\w]+)(?:\\s*\\.\\s*(?:`[^`]+`|[\\w]+))?";
+
     private static final Pattern CREATE_TABLE_PATTERN = Pattern.compile(
-            "(?is)^CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(?:`([^`]+)`|([\\w]+))\\s*\\("
+            "(?is)^CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?("
+                    + QUALIFIED_IDENTIFIER + ")\\s*\\("
     );
 
     private static final Pattern ALTER_TABLE_PATTERN = Pattern.compile(
-            "(?is)^ALTER\\s+TABLE\\s+(?:`([^`]+)`|([\\w]+))\\s+(.+)$"
+            "(?is)^ALTER\\s+TABLE\\s+(" + QUALIFIED_IDENTIFIER + ")\\s+(.+)$"
     );
 
     private static final Pattern DROP_TABLE_PATTERN = Pattern.compile(
-            "(?is)^DROP\\s+TABLE\\s+(?:IF\\s+EXISTS\\s+)?(?:`([^`]+)`|([\\w]+))$"
+            "(?is)^DROP\\s+TABLE\\s+(?:IF\\s+EXISTS\\s+)?("
+                    + QUALIFIED_IDENTIFIER + ")$"
     );
 
     private static final Pattern RENAME_TABLE_PATTERN = Pattern.compile(
-            "(?is)^RENAME\\s+TABLE\\s+(?:`([^`]+)`|([\\w]+))\\s+TO\\s+(?:`([^`]+)`|([\\w]+))$"
+            "(?is)^RENAME\\s+TABLE\\s+(" + QUALIFIED_IDENTIFIER
+                    + ")\\s+TO\\s+(" + QUALIFIED_IDENTIFIER + ")$"
+    );
+
+    private static final Pattern CREATE_INDEX_PATTERN = Pattern.compile(
+            "(?is)^CREATE\\s+(UNIQUE\\s+)?INDEX\\s+(`[^`]+`|[\\w]+)"
+                    + "\\s+ON\\s+(" + QUALIFIED_IDENTIFIER + ")\\s*\\((.*)\\)$"
+    );
+    private static final Pattern ALTER_STATEMENT_PATTERN = Pattern.compile(
+            "(?is)^ALTER\\s+TABLE\\b"
+    );
+    private static final Pattern ALTER_ALGORITHM_HINT_PATTERN = Pattern.compile(
+            "(?is)\\bALGORITHM\\s*=\\s*(INSTANT|INPLACE|COPY)\\b"
     );
 
     public DatabaseSchema parse(String sql) {
         if (sql == null || sql.isBlank()) {
             throw new IllegalArgumentException("SQL input cannot be empty.");
         }
+        sql = stripComments(sql);
 
         Map<String, TableSchema> tables = new LinkedHashMap<>();
         boolean sawSupportedStatement = false;
@@ -60,6 +78,9 @@ public class MySqlSchemaParser {
             } else if (RENAME_TABLE_PATTERN.matcher(item).matches()) {
                 parseRenameTable(item, tables);
                 sawSupportedStatement = true;
+            } else if (CREATE_INDEX_PATTERN.matcher(item).matches()) {
+                parseCreateIndex(item, tables);
+                sawSupportedStatement = true;
             } else {
                 throw new IllegalArgumentException(
                         "Unsupported SQL statement: " + item
@@ -76,6 +97,23 @@ public class MySqlSchemaParser {
         return new DatabaseSchema(tables);
     }
 
+    public List<String> explicitAlterAlgorithmHints(String sql) {
+        if (sql == null || sql.isBlank()) {
+            return List.of();
+        }
+        List<String> hints = new ArrayList<>();
+        for (String statement : splitStatements(stripComments(sql))) {
+            if (!ALTER_STATEMENT_PATTERN.matcher(statement.trim()).find()) {
+                continue;
+            }
+            Matcher matcher = ALTER_ALGORITHM_HINT_PATTERN.matcher(statement);
+            while (matcher.find()) {
+                hints.add(matcher.group(1).toUpperCase(Locale.ROOT));
+            }
+        }
+        return List.copyOf(hints);
+    }
+
     private void parseCreateTable(
             String sql,
             Map<String, TableSchema> tables
@@ -88,9 +126,7 @@ public class MySqlSchemaParser {
             );
         }
 
-        String tableName = matcher.group(1) != null
-                ? matcher.group(1)
-                : matcher.group(2);
+        String tableName = normalizeQualifiedIdentifier(matcher.group(1));
 
         int openingParen = matcher.end() - 1;
         int closingParen = findMatchingParenthesis(sql, openingParen);
@@ -119,17 +155,21 @@ public class MySqlSchemaParser {
 
             if (upper.startsWith("PRIMARY KEY")) {
                 primaryKey.addAll(extractColumns(item));
-            } else if (upper.startsWith("UNIQUE KEY")
-                    || upper.startsWith("UNIQUE INDEX")) {
-                indexes.add(parseIndex(item, true));
+            } else if (upper.startsWith("UNIQUE")) {
+                indexes.add(parseIndex(item, true, tableName));
             } else if (upper.startsWith("KEY")
                     || upper.startsWith("INDEX")) {
-                indexes.add(parseIndex(item, false));
+                indexes.add(parseIndex(item, false, tableName));
+            } else if (upper.startsWith("CONSTRAINT")
+                    && upper.contains("CHECK")) {
+                constraints.add(parseCheckConstraint(item, tableName));
             } else if (upper.startsWith("CONSTRAINT")
                     && upper.contains("FOREIGN KEY")) {
-                constraints.add(parseForeignKey(item));
+                constraints.add(parseForeignKey(item, tableName));
             } else if (upper.startsWith("FOREIGN KEY")) {
-                constraints.add(parseForeignKey(item));
+                constraints.add(parseForeignKey(item, tableName));
+            } else if (upper.startsWith("CHECK")) {
+                constraints.add(parseCheckConstraint(item, tableName));
             } else {
                 ColumnSchema column = parseColumn(item);
                 columns.put(column.name(), column);
@@ -154,6 +194,51 @@ public class MySqlSchemaParser {
         );
     }
 
+    private void parseCreateIndex(
+            String sql,
+            Map<String, TableSchema> tables
+    ) {
+        Matcher matcher = CREATE_INDEX_PATTERN.matcher(sql.trim());
+        if (!matcher.matches()) {
+            throw new IllegalArgumentException(
+                    "Unsupported CREATE INDEX statement: " + sql
+            );
+        }
+
+        String indexName = normalizeIdentifier(matcher.group(2));
+        String tableName = normalizeQualifiedIdentifier(matcher.group(3));
+        TableSchema table = tables.get(tableName);
+        if (table == null) {
+            throw new IllegalArgumentException(
+                    "Cannot create an index on unknown table: " + tableName
+            );
+        }
+
+        IndexSchema index = parseIndex(
+                (matcher.group(1) == null ? "INDEX " : "UNIQUE INDEX ")
+                        + indexName + " (" + matcher.group(4) + ")",
+                matcher.group(1) != null,
+                tableName
+        );
+        if (table.indexes().stream().anyMatch(existing ->
+                existing.name().equalsIgnoreCase(index.name()))) {
+            throw new IllegalArgumentException(
+                    "Index already exists in table " + tableName + ": "
+                            + index.name()
+            );
+        }
+
+        List<IndexSchema> indexes = new ArrayList<>(table.indexes());
+        indexes.add(index);
+        tables.put(tableName, new TableSchema(
+                table.name(),
+                new LinkedHashMap<>(table.columns()),
+                new ArrayList<>(table.primaryKey()),
+                indexes,
+                new ArrayList<>(table.constraints())
+        ));
+    }
+
     private void parseAlterTable(
             String sql,
             Map<String, TableSchema> tables
@@ -166,9 +251,7 @@ public class MySqlSchemaParser {
             );
         }
 
-        String tableName = matcher.group(1) != null
-                ? matcher.group(1)
-                : matcher.group(2);
+        String tableName = normalizeQualifiedIdentifier(matcher.group(1));
 
         TableSchema table = tables.get(tableName);
 
@@ -186,7 +269,7 @@ public class MySqlSchemaParser {
                 new ArrayList<>(table.constraints());
         String effectiveTableName = table.name();
 
-        for (String operation : splitDefinitions(matcher.group(3))) {
+        for (String operation : splitDefinitions(matcher.group(2))) {
             String item = operation.trim();
             String upper = item.toUpperCase(Locale.ROOT);
 
@@ -202,12 +285,20 @@ public class MySqlSchemaParser {
                         || upper.startsWith("ADD UNIQUE INDEX ")) {
                     indexes.add(parseIndex(
                             item.substring("ADD ".length()).trim(),
-                            upper.contains("UNIQUE")
+                            upper.contains("UNIQUE"),
+                            tableName
+                    ));
+                } else if (upper.startsWith("ADD CONSTRAINT ")
+                        && upper.contains("CHECK")) {
+                    constraints.add(parseCheckConstraint(
+                            item.substring("ADD ".length()).trim(),
+                            tableName
                     ));
                 } else if (upper.startsWith("ADD CONSTRAINT ")
                         || upper.startsWith("ADD FOREIGN KEY")) {
                     constraints.add(parseForeignKey(
-                            item.substring("ADD ".length()).trim()
+                            item.substring("ADD ".length()).trim(),
+                            tableName
                     ));
                 } else {
                     ColumnSchema column = parseColumn(
@@ -266,7 +357,7 @@ public class MySqlSchemaParser {
                         constraints, item.substring("RENAME COLUMN ".length()),
                         tableName, false);
             } else if (upper.startsWith("RENAME TO ")) {
-                effectiveTableName = normalizeIdentifier(
+                effectiveTableName = normalizeQualifiedIdentifier(
                         item.substring("RENAME TO ".length()).trim()
                 );
                 if (tables.containsKey(effectiveTableName)
@@ -307,10 +398,7 @@ public class MySqlSchemaParser {
             );
         }
 
-        String tableName = matcher.group(1) != null
-                ? matcher.group(1)
-                : matcher.group(2);
-        String normalizedName = normalizeIdentifier(tableName);
+        String normalizedName = normalizeQualifiedIdentifier(matcher.group(1));
 
         if (tables.containsKey(normalizedName)) {
             tables.remove(normalizedName);
@@ -329,15 +417,8 @@ public class MySqlSchemaParser {
             );
         }
 
-        String oldName = matcher.group(1) != null
-                ? matcher.group(1)
-                : matcher.group(2);
-        String newName = matcher.group(3) != null
-                ? matcher.group(3)
-                : matcher.group(4);
-
-        String originalName = normalizeIdentifier(oldName);
-        String renamedName = normalizeIdentifier(newName);
+        String originalName = normalizeQualifiedIdentifier(matcher.group(1));
+        String renamedName = normalizeQualifiedIdentifier(matcher.group(2));
 
         if (!tables.containsKey(originalName)) {
             throw new IllegalArgumentException(
@@ -461,7 +542,8 @@ public class MySqlSchemaParser {
                         .map(name -> name.equalsIgnoreCase(originalName)
                                 ? newName
                                 : name)
-                        .toList()
+                        .toList(),
+                constraint.expression()
         ));
     }
 
@@ -517,7 +599,8 @@ public class MySqlSchemaParser {
                         .map(name -> name.equalsIgnoreCase(originalName)
                                 ? newName
                                 : name)
-                        .toList()
+                        .toList(),
+                constraint.expression()
         ));
     }
 
@@ -599,6 +682,12 @@ public class MySqlSchemaParser {
         return name;
     }
 
+    private String normalizeQualifiedIdentifier(String value) {
+        return java.util.Arrays.stream(value.trim().split("\\s*\\.\\s*"))
+                .map(this::normalizeIdentifier)
+                .collect(java.util.stream.Collectors.joining("."));
+    }
+
     private List<String> splitStatements(String sql) {
         List<String> statements = new ArrayList<>();
         StringBuilder current = new StringBuilder();
@@ -644,6 +733,83 @@ public class MySqlSchemaParser {
         }
 
         return statements;
+    }
+
+    private String stripComments(String sql) {
+        StringBuilder result = new StringBuilder(sql.length());
+        boolean inSingleQuote = false;
+        boolean inDoubleQuote = false;
+        boolean inBacktick = false;
+        boolean inBlockComment = false;
+        boolean inLineComment = false;
+
+        for (int i = 0; i < sql.length(); i++) {
+            char current = sql.charAt(i);
+            char next = i + 1 < sql.length() ? sql.charAt(i + 1) : '\0';
+
+            if (inLineComment) {
+                if (current == '\n' || current == '\r') {
+                    inLineComment = false;
+                    result.append(current);
+                }
+                continue;
+            }
+            if (inBlockComment) {
+                if (current == '*' && next == '/') {
+                    inBlockComment = false;
+                    i++;
+                } else if (current == '\n' || current == '\r') {
+                    result.append(current);
+                }
+                continue;
+            }
+
+            if (!inSingleQuote && !inDoubleQuote && !inBacktick) {
+                if (current == '#'
+                        || (current == '-' && next == '-'
+                        && (i + 2 == sql.length()
+                        || Character.isWhitespace(sql.charAt(i + 2))))) {
+                    inLineComment = true;
+                    result.append(' ');
+                    if (current == '-') {
+                        i++;
+                    }
+                    continue;
+                }
+                if (current == '/' && next == '*') {
+                    inBlockComment = true;
+                    result.append(' ');
+                    i++;
+                    continue;
+                }
+            }
+
+            if (current == '\\' && i + 1 < sql.length()) {
+                result.append(current).append(sql.charAt(++i));
+                continue;
+            }
+            if (current == '\'' && !inDoubleQuote && !inBacktick) {
+                if (inSingleQuote && next == '\'') {
+                    result.append(current).append(sql.charAt(++i));
+                    continue;
+                }
+                inSingleQuote = !inSingleQuote;
+            } else if (current == '"'
+                    && !inSingleQuote && !inBacktick) {
+                inDoubleQuote = !inDoubleQuote;
+            } else if (current == '`'
+                    && !inSingleQuote && !inDoubleQuote) {
+                inBacktick = !inBacktick;
+            }
+            result.append(current);
+        }
+
+        if (inBlockComment) {
+            throw new IllegalArgumentException(
+                    "Unterminated block comment in SQL input."
+            );
+        }
+        return result.toString();
     }
 
     private List<String> splitDefinitions(String definition) {
@@ -723,31 +889,52 @@ public class MySqlSchemaParser {
         );
     }
 
-    private IndexSchema parseIndex(String definition, boolean unique) {
-        Matcher matcher = Pattern.compile(
-                "(?is)^(?:UNIQUE\\s+)?(?:KEY|INDEX)\\s+(?:`([^`]+)`|([\\w]+))\\s*\\((.*?)\\)"
-        ).matcher(definition.trim());
-
-        if (!matcher.find()) {
+    private IndexSchema parseIndex(
+            String definition,
+            boolean unique,
+            String tableName
+    ) {
+        int openingParen = definition.indexOf('(');
+        int closingParen = definition.lastIndexOf(')');
+        if (openingParen < 0 || closingParen <= openingParen) {
             throw new IllegalArgumentException(
                     "Unsupported index definition: " + definition
             );
         }
 
-        String name = matcher.group(1) != null
-                ? matcher.group(1)
-                : matcher.group(2);
+        String name = definition.substring(0, openingParen)
+                .replaceFirst(
+                        "(?is)^\\s*(?:UNIQUE\\s+(?:(?:KEY|INDEX)\\s*)?|"
+                                + "(?:KEY|INDEX)\\s*)",
+                        ""
+                ).trim();
+        List<String> columns = extractColumns(
+                definition.substring(openingParen, closingParen + 1)
+        );
+        if (name.isEmpty()) {
+            String prefix = unique ? "uk_" : "idx_";
+            name = generatedIdentifier(prefix + tableName + "_"
+                    + String.join("_", columns));
+        } else {
+            name = normalizeIdentifier(name);
+        }
 
         return new IndexSchema(
                 name,
                 unique,
-                extractColumns(matcher.group(3))
+                columns
         );
     }
 
-    private ConstraintSchema parseForeignKey(String definition) {
+    private ConstraintSchema parseForeignKey(
+            String definition,
+            String tableName
+    ) {
         Matcher matcher = Pattern.compile(
-                "(?is)^(?:CONSTRAINT\\s+`?([\\w]+)`?\\s+)?FOREIGN\\s+KEY\\s*(?:`?([\\w]+)`?\\s*)?\\((.*?)\\)\\s*REFERENCES\\s+(?:`([^`]+)`|([\\w]+))\\s*\\((.*?)\\)"
+                "(?is)^(?:CONSTRAINT\\s+(`[^`]+`|[\\w]+)\\s+)?"
+                        + "FOREIGN\\s+KEY\\s*(?:(`[^`]+`|[\\w]+)\\s*)?"
+                        + "\\((.*?)\\)\\s*REFERENCES\\s+("
+                        + QUALIFIED_IDENTIFIER + ")\\s*\\((.*?)\\)"
         ).matcher(definition.trim());
 
         if (!matcher.matches()) {
@@ -756,21 +943,75 @@ public class MySqlSchemaParser {
             );
         }
 
+        String referencedTable = normalizeQualifiedIdentifier(matcher.group(4));
+        List<String> columns = extractColumns(matcher.group(3));
         String name = matcher.group(1) != null
-                ? matcher.group(1)
-                : "unnamed_foreign_key";
-
-        String referencedTable = matcher.group(4) != null
-                ? matcher.group(4)
-                : matcher.group(5);
+                ? normalizeIdentifier(matcher.group(1))
+                : matcher.group(2) != null
+                        ? normalizeIdentifier(matcher.group(2))
+                        : generatedForeignKeyName(
+                                tableName, columns, referencedTable);
 
         return new ConstraintSchema(
                 name,
                 "FOREIGN KEY",
-                extractColumns(matcher.group(3)),
+                columns,
                 referencedTable,
-                extractColumns(matcher.group(6))
+                extractColumns(matcher.group(5))
         );
+    }
+
+    private ConstraintSchema parseCheckConstraint(
+            String definition,
+            String tableName
+    ) {
+        Matcher matcher = Pattern.compile(
+                "(?is)^(?:CONSTRAINT\\s+(`[^`]+`|[\\w]+)\\s+)?CHECK\\s*\\("
+        ).matcher(definition.trim());
+        if (!matcher.find()) {
+            throw new IllegalArgumentException(
+                    "Unsupported CHECK constraint: " + definition
+            );
+        }
+        int openingParen = matcher.end() - 1;
+        int closingParen = findMatchingParenthesis(definition, openingParen);
+        if (closingParen < 0
+                || !definition.substring(closingParen + 1).isBlank()
+                && !definition.substring(closingParen + 1).trim()
+                        .matches("(?i)NOT\\s+ENFORCED|ENFORCED")) {
+            throw new IllegalArgumentException(
+                    "Unsupported CHECK constraint: " + definition
+            );
+        }
+        String expression = definition.substring(
+                openingParen + 1, closingParen).trim();
+        String name = matcher.group(1) == null
+                ? generatedIdentifier("ck_" + tableName + "_"
+                        + Integer.toUnsignedString(expression.hashCode(), 16))
+                : normalizeIdentifier(matcher.group(1));
+        return new ConstraintSchema(
+                name, "CHECK", List.of(), null, List.of(), expression);
+    }
+
+    private String generatedForeignKeyName(
+            String tableName,
+            List<String> columns,
+            String referencedTable
+    ) {
+        return generatedIdentifier("fk_" + tableName + "_"
+                + String.join("_", columns) + "_" + referencedTable);
+    }
+
+    private String generatedIdentifier(String value) {
+        String identifier = value.toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9_]+", "_")
+                .replaceAll("_+", "_");
+        if (identifier.length() <= 64) {
+            return identifier;
+        }
+        String suffix = "_" + Integer.toUnsignedString(
+                identifier.hashCode(), 16);
+        return identifier.substring(0, 64 - suffix.length()) + suffix;
     }
 
     private List<String> extractColumns(String definition) {

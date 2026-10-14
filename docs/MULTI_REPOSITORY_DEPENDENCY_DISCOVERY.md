@@ -1,132 +1,97 @@
 # Multi-Repository Dependency Discovery
 
-## Purpose
-
-SchemaGuard can scan several registered application repositories in one request, detect evidence that each application uses database tables and columns, and make that evidence available to the existing schema impact analyzer.
-
-The scanner inspects local source files only. It does not connect to company application databases, read business rows, execute submitted SQL, or run repository code. It does not automatically clone a GitHub URL; each repository must first be checked out locally.
+SchemaGuard can scan registered application repositories, persist source evidence,
+and match the discovered table and column references to proposed schema changes.
+The scanner analyzes source and configuration files; it does not connect to
+application databases, read business data, execute SQL, or run repository code.
 
 ## Workflow
 
-1. Register each application using \`POST /api/v1/dependencies/applications\`.
-2. Check out each application's repository into a trusted local directory.
-3. Set scan roots if the repositories are outside the default allowed directories.
-4. Submit a single \`POST /api/v1/dependencies/scan/multiple\` request with each registered application ID and its local repository path.
-5. Review per-repository scan evidence, file locations, detected table/column references, and truncation warnings.
-6. Submit the old and proposed SQL to \`POST /api/v1/schema/diff-with-impact\`.
-7. The impact report uses registered and scanned evidence. If no direct dependency is found, it asks for manual verification rather than declaring the application safe.
+1. Register each application with `POST /api/v1/dependencies/applications`.
+2. Submit local checkout paths or supported GitHub repository URLs to
+   `POST /api/v1/dependencies/scan/multiple`.
+3. Review each application's evidence, scan limits, and coverage.
+4. Submit the current and proposed schemas to
+   `POST /api/v1/schema/diff-with-impact`, including the same `databaseName`
+   used when registering the application.
+5. Review affected applications/components and the confidence-backed risk score.
+
+When no dependency was found, the report identifies the application as
+unscanned or says that no reference was found in the analyzed source. It does
+not claim that an application is unaffected.
 
 ## Register an application
 
-\`POST /api/v1/dependencies/applications\`
+`POST /api/v1/dependencies/applications`
 
-Example request:
-
-\`\`\`json
+```json
 {
   "applicationId": "user-service",
   "name": "User Service",
-  "repository": "https://github.com/example/user-service",
   "databaseName": "customer_db",
+  "repository": "https://github.com/example/user-service",
   "description": "User profile APIs and persistence"
 }
-\`\`\`
+```
 
-The existing registry uses \`applicationId\` and \`name\` to identify the application. The \`repository\` field remains metadata; the local path used for a scan is provided separately.
+## Scan repositories
 
-## Scan multiple repositories together
+`POST /api/v1/dependencies/scan/multiple`
 
-\`POST /api/v1/dependencies/scan/multiple\`
-
-Example request:
-
-\`\`\`json
+```json
 {
   "repositories": [
     {
       "applicationId": "user-service",
-      "repositoryPath": "C:/Users/harsh/projects/user-service"
+      "repositoryPath": "C:\\projects\\user-service"
     },
     {
       "applicationId": "order-service",
-      "repositoryPath": "C:/Users/harsh/projects/order-service"
+      "repositoryPath": "C:\\projects\\order-service"
     }
   ]
 }
-\`\`\`
+```
 
-Register all application IDs before scanning. Each application ID must be registered and must appear only once per request. A request can include up to 20 repositories. The original \`POST /api/v1/dependencies/scan\` single-repository endpoint remains available.
+Every application ID must already be registered. A request returns repository,
+file, byte, and reference totals; per-application results; and warnings for
+truncated scans. The original `POST /api/v1/dependencies/scan` endpoint remains
+available for one repository.
 
-The response includes:
-- total repositories scanned, files scanned, bytes scanned, and references found
-- a result for each application, including its original scan output
-- warnings when a scan reaches a configured limit
-- evidence containing table, optional column, source location, snippet, detector, and confidence
+The current scanner detects common SQL table references, simple single-table
+`SELECT column-list FROM table` projections, and explicit JPA
+`@Table(name = ...)` mappings. Static SQL references are heuristic; exact API
+attribution is included only when the scanner has supporting source structure.
+Dynamic SQL, joins' column ownership, implicit ORM mappings, and framework-
+specific query builders may not be resolved.
 
-## Current evidence detectors
+## Limits and persistence
 
-The scanner currently recognizes:
-- SQL table references using patterns such as \`FROM\`, \`JOIN\`, \`UPDATE\`, \`INTO\`, \`DELETE FROM\`, \`CREATE TABLE\`, and \`REFERENCES\`
-- simple single-table \`SELECT column-list FROM table\` projections, which can associate selected columns with the table
-- explicit JPA \`@Table(name = ...)\` mappings
-- explicit JPA \`@Column(name = ...)\` mappings when exactly one explicit JPA table mapping is present in the source file
-- explicit \`@Entity(name = ...)\` names as a lower-confidence heuristic, not proof of the physical table name
+- Up to 500 supported source files per repository scan; files larger than 1 MiB
+  are skipped.
+- GitHub archives are limited to 25 MiB compressed, 100 MiB extracted, 20,000
+  archive entries, and 501 extracted source files.
+- Common generated/build directories are skipped; code is never executed.
+- Application records, manually registered dependencies, scanner evidence,
+  and scan coverage are stored in MySQL and migrated by Flyway.
+- A successful rescan replaces that application's previous scanner-generated
+  evidence and coverage while retaining manually registered dependencies.
 
-Static SQL patterns are heuristic and labelled medium confidence; explicit table/column annotations are labelled high confidence. Confidence labels describe the detector's evidence category, not a statistical probability.
+Set `DB_URL`, `DB_USERNAME`, and `DB_PASSWORD` to configure SchemaGuard's
+registry database. The registry stores dependency metadata, not application
+business data.
 
-## How impact is calculated
+Optional `TARGET_DB_URL`, `TARGET_DB_USERNAME`, and `TARGET_DB_PASSWORD`
+configure read-only MySQL metadata lookup for affected table sizes. Use a
+separate database account with read-only privileges. The score adds up to 10
+points based on the largest affected table (100 MiB: 2; 1 GiB: 4; 10 GiB: 7;
+100 GiB: 10). Without this configuration the response reports
+`NOT_CONFIGURED` and adds no size points. Exact `INSTANT`/`INPLACE`/`COPY`
+selection is not inferred from schema snapshots; validate the exact migration
+against the target MySQL version on staging.
 
-The schema diff engine identifies changed tables/columns. The impact analysis then matches those objects to manual and scanned dependency entries in the registry. Source locations and snippets are returned as evidence.
+## Validation
 
-The analyzer does not invent application names or hard-code example services. A discovered repository dependency is not automatically an HTTP API endpoint. Exact endpoint attribution across controller/service/repository call chains is a later enhancement; this version reports the registered application and source reference. If a relationship is not found, the result says that manual verification is required.
-
-## Scan limits and path safety
-
-- Repositories must be local directories.
-- Paths containing parent traversal segments (\`..\`) are rejected.
-- Registered scan paths must resolve beneath a configured trusted scan root.
-- Symbolic links are not followed.
-- Common build, IDE, generated, and dependency directories are skipped.
-- Only recognized source/configuration extensions are scanned.
-- Maximum per scan: 200 files, 1 MiB per file, 50 MiB total bytes.
-- A truncated scan is explicitly marked in the response.
-- Code is never executed.
-
-By default, the current working directory, Java's temporary directory, and (when running from a directory named \`backend\`) its parent project directory are allowed. To scan repositories elsewhere, set \`SCHEMAGUARD_SCAN_ALLOWEDROOTS\` before launching Spring Boot. Separate roots with the operating system's path separator.
-
-Example PowerShell configuration:
-
-\`\`\`powershell
-$env:SCHEMAGUARD_SCAN_ALLOWEDROOTS = "C:\Users\harsh\projects;D:\company-repositories"
-cd C:\Users\harsh\SchemaGuard\backend
-mvn spring-boot:run
-\`\`\`
-
-Only add trusted source directories. Do not expose a local SchemaGuard instance to untrusted network clients.
-
-## Persistence
-
-The current application/dependency registry is held in process memory. Application registrations and scanned evidence are lost when the backend restarts; re-register and rescan repositories after restart. The stored metadata is dependency evidence only, not business/application data. A later change can add persistence for repository metadata if required.
-
-## Limitations
-
-- Dynamic SQL and runtime-generated queries may not be resolved.
-- Column extraction is intentionally limited to simple single-table SELECT projections and explicit JPA annotations.
-- Join projections, stored procedures, database views, implicit ORM mappings, and framework-specific patterns may require additional detectors.
-- Source file evidence does not prove which HTTP API executes a query.
-- An absence of matches never proves an application is unaffected.
-- Review dependency evidence and validate application behavior before approving a production migration.
-
-## Test
-
-From the project root:
-
-\`\`\`powershell
-mvn -f backend/pom.xml clean test
-\`\`\`
-
-Or from the backend directory:
-
-\`\`\`powershell
-mvn clean test
-\`\`\`
+```powershell
+mvn -f backend\pom.xml clean test
+```

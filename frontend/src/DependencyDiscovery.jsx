@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import "./DependencyDiscovery.css";
 
-const API_BASE = "http://localhost:8080/api/v1/dependencies";
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || "/api/v1")
+    + "/dependencies";
 
 const initialForm = {
     applicationId: "",
@@ -25,6 +26,19 @@ async function readApiResponse(response, fallbackMessage) {
     return response.json();
 }
 
+function toApplicationList(data) {
+    if (Array.isArray(data)) {
+        return data.map(application => ({
+            applicationId: application.applicationId,
+            name: application.name
+        }));
+    }
+    return Object.entries(data || {}).map(([applicationId, name]) => ({
+        applicationId,
+        name
+    }));
+}
+
 function DependencyDiscovery() {
     const [form, setForm] = useState(initialForm);
     const [applications, setApplications] = useState([]);
@@ -36,26 +50,34 @@ function DependencyDiscovery() {
     const [error, setError] = useState("");
     const [notice, setNotice] = useState("");
 
-    async function refreshApplications() {
-        setLoadingApplications(true);
-        try {
-            const response = await fetch(API_BASE + "/applications");
-            const data = await readApiResponse(response, "Could not load registered applications.");
-            setApplications(Object.entries(data || {}).map(([applicationId, name]) => ({
-                applicationId,
-                name
-            })));
-        } catch (requestError) {
-            setError(requestError.message.includes("fetch")
-                ? "Cannot reach SchemaGuard. Start the Spring Boot backend on port 8080."
-                : requestError.message);
-        } finally {
-            setLoadingApplications(false);
-        }
-    }
-
     useEffect(() => {
-        refreshApplications();
+        let isActive = true;
+
+        async function loadApplications() {
+            try {
+                const response = await fetch(API_BASE + "/applications");
+                const data = await readApiResponse(
+                    response, "Could not load registered applications.");
+                if (isActive) {
+                    setApplications(toApplicationList(data));
+                }
+            } catch (requestError) {
+                if (isActive) {
+                    setError(requestError.message.includes("fetch")
+                        ? "Cannot reach SchemaGuard. Start the Spring Boot backend on port 8080."
+                        : requestError.message);
+                }
+            } finally {
+                if (isActive) {
+                    setLoadingApplications(false);
+                }
+            }
+        }
+
+        void loadApplications();
+        return () => {
+            isActive = false;
+        };
     }, []);
 
     const configuredRepositories = useMemo(
@@ -65,11 +87,18 @@ function DependencyDiscovery() {
 
     const totalEvidence = scanResult?.referencesFound ?? 0;
     const allEvidence = (scanResult?.results || []).flatMap(result =>
-        (result.scanResult?.evidence || []).map((evidence, index) => ({
-            ...evidence,
+        (result.scanResult?.dependencies || []).map((dependency, index) => ({
+            tableName: dependency.tableName,
+            columnName: dependency.columnName,
+            sourceLocation: dependency.source,
+            snippet: dependency.evidence,
+            detector: dependency.dependencyType,
+            confidence: dependency.confidence,
+            apiEndpoint: dependency.apiEndpoint,
             applicationId: result.applicationId,
             applicationName: result.applicationName,
-            resultKey: result.applicationId + "-" + evidence.sourceLocation + "-" + evidence.detector + "-" + index
+            resultKey: result.applicationId + "-" + dependency.source
+                + "-" + dependency.dependencyType + "-" + index
         }))
     );
 
@@ -109,10 +138,7 @@ function DependencyDiscovery() {
             });
 
             const data = await readApiResponse(response, "Could not register this application.");
-            setApplications(Object.entries(data || {}).map(([id, applicationName]) => ({
-                applicationId: id,
-                name: applicationName
-            })));
+            setApplications(toApplicationList(data));
             setRepositoryPaths(current => ({ ...current, [applicationId]: localPath }));
             setForm(initialForm);
             setNotice("Registered " + name + ". Its local source path is ready to scan.");
@@ -380,6 +406,11 @@ function DependencyDiscovery() {
                                         <code>{evidence.tableName}{evidence.columnName ? "." + evidence.columnName : ""}</code>
                                         <span>{evidence.detector}</span>
                                     </div>
+                                    {evidence.apiEndpoint && (
+                                        <p className="dependency-source-location">
+                                            API: {evidence.apiEndpoint}
+                                        </p>
+                                    )}
                                     <p className="dependency-source-location">{evidence.sourceLocation}</p>
                                     <pre>{evidence.snippet}</pre>
                                 </article>

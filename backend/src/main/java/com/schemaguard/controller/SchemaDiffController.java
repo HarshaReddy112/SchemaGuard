@@ -51,10 +51,14 @@ public class SchemaDiffController {
         DatabaseSchema newSchema = parser.parse(request.newSql());
         SchemaDiffResult diff = engine.compare(oldSchema, newSchema);
         var impacts = impactAnalysisService.analyze(diff, request.databaseName());
-        var score = impactAnalysisService.calculateRiskScore(diff, impacts);
+        var applicationSummaries = impactAnalysisService.summarizeApplications(
+                request.databaseName(), !diff.changes().isEmpty(), impacts);
+        var score = impactAnalysisService.calculateRiskScore(
+                diff, impacts, request.databaseName(), request.migrationSql());
         var plan = impactAnalysisService.buildMigrationPlan(diff, impacts);
         return ResponseEntity.ok(
-                new SchemaImpactResponse(diff, impacts, score, plan)
+                new SchemaImpactResponse(
+                        diff, impacts, applicationSummaries, score, plan)
         );
     }
 

@@ -3,6 +3,7 @@ name: Backend tests
 on:
   push:
     branches:
+      - main
       - feature/multi-repository-impact-analysis
       - feature/visual-schema-comparison
       - develop

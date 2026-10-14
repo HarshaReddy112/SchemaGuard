@@ -76,7 +76,8 @@ class MultiRepositoryDependencyIntegrationTest {
 
         SchemaDiffRequest diffRequest = new SchemaDiffRequest(
                 "CREATE TABLE users (id BIGINT NOT NULL, email VARCHAR(255), PRIMARY KEY (id));",
-                "CREATE TABLE users (id BIGINT NOT NULL, email VARCHAR(512), PRIMARY KEY (id));"
+                "CREATE TABLE users (id BIGINT NOT NULL, email VARCHAR(512), PRIMARY KEY (id));",
+                "schemaguard_test"
         );
 
         mockMvc.perform(post("/api/v1/schema/diff-with-impact")
@@ -90,8 +91,8 @@ class MultiRepositoryDependencyIntegrationTest {
         ApplicationRegistrationRequest request = new ApplicationRegistrationRequest(
                 applicationId,
                 name,
-                "local-checkout",
                 "schemaguard_test",
+                "local-checkout",
                 "Integration test application"
         );
 
