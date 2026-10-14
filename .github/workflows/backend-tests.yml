@@ -1,0 +1,29 @@
+name: Backend tests
+
+on:
+  push:
+    branches:
+      - feature/multi-repository-dependency-discovery
+      - develop
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-tests.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-tests.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Run backend tests
+        run: mvn -B -ntp -f backend/pom.xml clean test
