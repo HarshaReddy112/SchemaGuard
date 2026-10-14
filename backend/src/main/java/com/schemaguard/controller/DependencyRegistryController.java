@@ -1,7 +1,7 @@
 package com.schemaguard.controller;
 
-import com.schemaguard.model.ApplicationRegistrationRequest;
 import com.schemaguard.model.ApplicationDependency;
+import com.schemaguard.model.ApplicationRegistrationRequest;
 import com.schemaguard.model.DependencyRegistrationRequest;
 import com.schemaguard.service.DependencyRegistryService;
 import org.springframework.http.HttpStatus;
@@ -15,7 +15,11 @@ import java.util.Map;
 @RequestMapping("/api/v1/dependencies")
 public class DependencyRegistryController {
 
-    private final DependencyRegistryService registryService = new DependencyRegistryService();
+    private final DependencyRegistryService registryService;
+
+    public DependencyRegistryController(DependencyRegistryService registryService) {
+        this.registryService = registryService;
+    }
 
     @PostMapping("/applications")
     public ResponseEntity<Map<String, String>> registerApplication(
