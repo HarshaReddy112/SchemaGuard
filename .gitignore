@@ -1,0 +1,34 @@
+# Java and Maven build output
+**/target/
+*.class
+*.jar
+*.war
+
+# Node.js and frontend build output
+**/node_modules/
+**/dist/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Environment files and local secrets
+.env
+.env.*
+!.env.example
+
+# IDE and editor files
+.vscode/
+.idea/
+*.iml
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+
+# Local configuration
+application-local.properties
+application-secret.properties
