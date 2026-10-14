@@ -121,7 +121,7 @@ public class RepositoryDependencyScannerService {
                         }
 
                         String source = Files.readString(file, StandardCharsets.UTF_8);
-                        if (source.indexOf('\u0000') >= 0) {
+                        if (source.indexOf((char) 0) >= 0) {
                             warnings.add("Skipped binary-like file: " + relative(root, file));
                             return FileVisitResult.CONTINUE;
                         }
