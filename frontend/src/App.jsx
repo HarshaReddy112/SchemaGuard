@@ -1,7 +1,7 @@
 import { useState } from "react";
 import "./App.css";
 
-const API_URL = "http://localhost:8080/api/v1/schema/diff";
+const API_BASE = "http://localhost:8080/api/v1";
 
 const initialOldSql = `CREATE TABLE users (
     id BIGINT NOT NULL,
@@ -20,8 +20,20 @@ function App() {
     const [oldSql, setOldSql] = useState(initialOldSql);
     const [newSql, setNewSql] = useState(initialNewSql);
     const [report, setReport] = useState(null);
+    const [impactReport, setImpactReport] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [registering, setRegistering] = useState(false);
     const [error, setError] = useState("");
+    const [registryMessage, setRegistryMessage] = useState("");
+    const [applicationId, setApplicationId] = useState("");
+    const [applicationName, setApplicationName] = useState("");
+    const [databaseName, setDatabaseName] = useState("application_db");
+    const [tableName, setTableName] = useState("");
+    const [columnName, setColumnName] = useState("");
+    const [dependencyType, setDependencyType] = useState("READ_WRITE");
+    const [repositoryPath, setRepositoryPath] = useState("");
+    const [scanning, setScanning] = useState(false);
+    const [scanMessage, setScanMessage] = useState("");
     const [riskFilter, setRiskFilter] = useState("ALL");
     const [sortByRisk, setSortByRisk] = useState(true);
 
@@ -34,14 +46,15 @@ function App() {
         setLoading(true);
         setError("");
         setReport(null);
+        setImpactReport(null);
 
         try {
-            const response = await fetch(API_URL, {
+            const response = await fetch(`${API_BASE}/schema/diff-with-impact`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json"
                 },
-                body: JSON.stringify({ oldSql, newSql })
+                body: JSON.stringify({ oldSql, newSql, databaseName })
             });
 
             if (!response.ok) {
@@ -50,7 +63,8 @@ function App() {
             }
 
             const data = await response.json();
-            setReport(data);
+            setReport(data.diffResult ?? data);
+            setImpactReport(data.diffResult ? data : null);
         } catch (err) {
             setError(
                 err.message.includes("fetch")
@@ -64,7 +78,98 @@ function App() {
 
     function clearReport() {
         setReport(null);
+        setImpactReport(null);
         setError("");
+    }
+
+    async function registerDependency() {
+        if (!applicationId.trim() || !applicationName.trim()
+                || !databaseName.trim() || !tableName.trim()) {
+            setRegistryMessage("Application ID, name, database, and table are required.");
+            return;
+        }
+
+        setRegistering(true);
+        setRegistryMessage("");
+        try {
+            let response = await fetch(`${API_BASE}/dependencies/applications`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    applicationId,
+                    name: applicationName,
+                    databaseName
+                })
+            });
+            if (!response.ok) {
+                throw new Error(await response.text());
+            }
+
+            response = await fetch(`${API_BASE}/dependencies/entries`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    applicationId,
+                    tableName,
+                    columnName: columnName.trim() || null,
+                    dependencyType,
+                    source: "manual-registry",
+                    evidence: "Registered through the SchemaGuard UI",
+                    confidence: "HIGH"
+                })
+            });
+            if (!response.ok) {
+                throw new Error(await response.text());
+            }
+            setRegistryMessage(`Dependency saved for ${applicationName}. Run analysis to see its impact.`);
+        } catch (err) {
+            setRegistryMessage(err.message || "Could not register dependency.");
+        } finally {
+            setRegistering(false);
+        }
+    }
+
+    async function scanApplicationRepository() {
+        if (!applicationId.trim() || !applicationName.trim()
+                || !databaseName.trim() || !repositoryPath.trim()) {
+            setScanMessage("Application ID, name, database, and repository path are required.");
+            return;
+        }
+
+        setScanning(true);
+        setScanMessage("");
+        try {
+            const registrationResponse = await fetch(`${API_BASE}/dependencies/applications`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    applicationId,
+                    name: applicationName,
+                    databaseName
+                })
+            });
+            if (!registrationResponse.ok) {
+                throw new Error(await registrationResponse.text());
+            }
+
+            const response = await fetch(`${API_BASE}/dependencies/scan`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ applicationId, repositoryPath })
+            });
+            if (!response.ok) {
+                throw new Error(await response.text());
+            }
+
+            const result = await response.json();
+            setScanMessage(
+                `Scanned ${result.scannedFiles} files and found ${result.dependenciesRegistered} database dependencies. Run analysis to see affected APIs.`
+            );
+        } catch (err) {
+            setScanMessage(err.message || "Could not scan the application repository.");
+        } finally {
+            setScanning(false);
+        }
     }
 
     const riskClass = report?.overallRisk?.toLowerCase() || "none";
@@ -83,6 +188,23 @@ function App() {
               (riskOrder[b.riskLevel] ?? 3)
             : 0
     );
+    const applicationGroups = Object.values(
+        (impactReport?.impacts || [])
+            .filter(impact => impact.applicationId)
+            .reduce((groups, impact) => {
+                const group = groups[impact.applicationId] || {
+                    applicationId: impact.applicationId,
+                    applicationName: impact.applicationName,
+                    databaseName: impact.databaseName,
+                    impacts: []
+                };
+                group.impacts.push(impact);
+                groups[impact.applicationId] = group;
+                return groups;
+            }, {})
+    );
+    const untrackedImpacts = (impactReport?.impacts || [])
+        .filter(impact => !impact.applicationId);
 
     return (
         <div className="app-shell">
@@ -180,6 +302,62 @@ function App() {
                     )}
                 </section>
 
+                <section className="dependency-setup">
+                    <details>
+                        <summary>Register an application dependency</summary>
+                        <p>
+                            Register an application and scan its local source repository to discover
+                            database dependencies and associate SQL usage with recognizable API routes.
+                        </p>
+                        <div className="dependency-form">
+                            <label>
+                                Application ID
+                                <input value={applicationId} onChange={event => setApplicationId(event.target.value)} placeholder="orders-api" />
+                            </label>
+                            <label>
+                                Application name
+                                <input value={applicationName} onChange={event => setApplicationName(event.target.value)} placeholder="Orders API" />
+                            </label>
+                            <label>
+                                Database name
+                                <input value={databaseName} onChange={event => setDatabaseName(event.target.value)} />
+                            </label>
+                            <label>
+                                Table
+                                <input value={tableName} onChange={event => setTableName(event.target.value)} placeholder="orders" />
+                            </label>
+                            <label>
+                                Column (optional)
+                                <input value={columnName} onChange={event => setColumnName(event.target.value)} placeholder="status" />
+                            </label>
+                            <label>
+                                Usage
+                                <select value={dependencyType} onChange={event => setDependencyType(event.target.value)}>
+                                    <option value="READ_WRITE">Reads and writes</option>
+                                    <option value="READ">Reads</option>
+                                    <option value="WRITE">Writes</option>
+                                </select>
+                            </label>
+                            <label className="repository-path-field">
+                                Repository folder or public GitHub URL
+                                <input value={repositoryPath} onChange={event => setRepositoryPath(event.target.value)} placeholder="https://github.com/owner/repository" />
+                            </label>
+                        </div>
+                        <p className="repository-help">
+                            Public GitHub repository URLs and local folder paths are supported.
+                            Private repositories and links to subfolders are not supported.
+                        </p>
+                        <button className="scan-button" onClick={scanApplicationRepository} disabled={scanning}>
+                            {scanning ? "Scanning repository..." : "Register and scan repository"}
+                        </button>
+                        {scanMessage && <p className="registry-message" role="status">{scanMessage}</p>}
+                        <button className="text-button" onClick={registerDependency} disabled={registering}>
+                            {registering ? "Saving..." : "Save dependency"}
+                        </button>
+                        {registryMessage && <p className="registry-message" role="status">{registryMessage}</p>}
+                    </details>
+                </section>
+
                 {report && (
                     <section className="results-section">
                         <div className="section-heading">
@@ -217,6 +395,82 @@ function App() {
                                 {report.overallRisk === "NONE" ? "✓" : "!"}
                             </div>
                         </div>
+
+                        {impactReport && (
+                            <>
+                                <div className="numeric-risk-card">
+                                    <div>
+                                        <span className="result-label">DEPENDENCY-AWARE RISK SCORE</span>
+                                        <strong>{impactReport.riskScore.score}<small>/100</small></strong>
+                                        <p>{impactReport.riskScore.explanation}</p>
+                                    </div>
+                                    <span>{impactReport.riskScore.affectedApplicationCount} affected application(s)</span>
+                                </div>
+                                <div className="result-panel">
+                                    <div className="panel-heading">
+                                        <div>
+                                            <h3>Potentially affected applications</h3>
+                                            <p>Matched by database, table, and column against registered or scanned evidence</p>
+                                        </div>
+                                    </div>
+                                    {applicationGroups.length === 0 && untrackedImpacts.length === 0 ? (
+                                        <div className="empty-state">
+                                            <strong>No affected applications found</strong>
+                                            <p>Register an application and scan its repository before running the impact analysis.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="impact-list">
+                                            {applicationGroups.map(application => {
+                                                const affectedTables = [...new Set(
+                                                    application.impacts.map(impact =>
+                                                        `${impact.tableName}${impact.columnName ? `.${impact.columnName}` : ""}`
+                                                    )
+                                                )];
+                                                const apiEvidence = [...new Map(
+                                                    application.impacts.map(impact => {
+                                                        const label = impact.apiEndpoint
+                                                            ? `${impact.apiEndpoint} · ${impact.source}`
+                                                            : impact.source || "API route not resolved";
+                                                        return [label, {
+                                                            label,
+                                                            evidence: impact.evidence,
+                                                            dependencyType: impact.dependencyType
+                                                        }];
+                                                    })
+                                                ).values()];
+                                                return (
+                                                    <article className="impact-item application-impact" key={application.applicationId}>
+                                                        <div>
+                                                            <strong>{application.applicationName}</strong>
+                                                            <span>{application.databaseName || databaseName}</span>
+                                                        </div>
+                                                        <p>Affected schema objects: {affectedTables.join(", ")}</p>
+                                                        <strong className="api-list-heading">Potentially affected APIs / code</strong>
+                                                        <ul className="api-evidence-list">
+                                                            {apiEvidence.map(api => (
+                                                                <li key={api.label}>
+                                                                    <span>{api.label}</span>
+                                                                    <small>{api.dependencyType} · {api.evidence}</small>
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </article>
+                                                );
+                                            })}
+                                            {untrackedImpacts.map((impact, index) => (
+                                                <article className="impact-item" key={`untracked-${impact.tableName}-${index}`}>
+                                                    <div>
+                                                        <strong>{impact.applicationName}</strong>
+                                                        <span>{impact.databaseName} · {impact.tableName}</span>
+                                                    </div>
+                                                    <p>{impact.evidence}</p>
+                                                </article>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        )}
 
                         <div className="risk-grid">
                             <div className="risk-card high-card">

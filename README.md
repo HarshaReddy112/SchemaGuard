@@ -22,11 +22,11 @@ The system is structured as layered services, each responsible for a narrow part
 
 - Parser layer: converts SQL scripts into a structured schema model
 - Diff engine: compares old and new schemas and emits schema changes
-- Risk classifier: assigns a risk level and rationale to each change
+- Risk rules in the diff engine: assign a risk level and rationale to each change
 - Dependency registry: stores manually known application-to-table relationships
 - Repository scanner: looks for static SQL references in supported source files
-- Dependency graph: links applications, tables, columns, and evidence together
-- Impact analysis: maps a schema change to dependent applications
+- Impact analysis: matches a schema change to dependencies by database, table, and column
+- Risk-score calculator: combines change severity, affected application count, and evidence confidence
 - API layer: exposes comparison and impact-aware endpoints
 - Frontend: visualizes schema differences, warnings, impacts, and migration plans
 
@@ -63,7 +63,7 @@ The system is structured as layered services, each responsible for a narrow part
 +---------------------------+
 | Dependency registry +     |
 | static repository scan    |
-| + dependency graph        |
+| matched by DB/table/column|
 +-------------+-------------+
               |
               v
@@ -95,9 +95,9 @@ Key backend packages:
 - [backend/src/main/java/com/schemaguard/diff](backend/src/main/java/com/schemaguard/diff)
   - schema comparison, schema change generation, risk classification
 - [backend/src/main/java/com/schemaguard/model](backend/src/main/java/com/schemaguard/model)
-  - schema model, diff request/response DTOs, dependency evidence, graph models, impact models
+  - schema model, diff request/response DTOs, dependency evidence, impact and score models
 - [backend/src/main/java/com/schemaguard/service](backend/src/main/java/com/schemaguard/service)
-  - registry logic, scanning, graph traversal, impact evaluation
+  - in-memory registry, bounded scanning, impact matching, risk-score calculation
 
 ### 2. Frontend
 
@@ -111,7 +111,7 @@ It provides:
 - filtering and sorting of changes by risk level
 - dependency impact panels
 - migration plan recommendations
-- graceful fallback if the impact-aware endpoint is unavailable
+- explicit error display when dependency-aware analysis fails
 
 ### 3. Supported SQL safety model
 
@@ -182,19 +182,18 @@ Recommendation text is conditional and practical. It does not assume every chang
 
 ### Dependency discovery
 
-SchemaGuard adds dependency discovery in layers:
+SchemaGuard discovers dependencies in two ways:
 
 1. Manual registration
-   - applications can be registered
-   - table and column dependency entries can be stored
+   - register an application and its database
+   - register table-level or column-level READ/WRITE dependencies
 2. Static repository scanning
-   - scans Java, SQL, XML, properties, and common source files for SQL patterns
-   - captures file paths and snippets as evidence
-3. Graph construction
-   - builds nodes and edges between applications, tables, and columns
-   - supports bounded traversal and cycle protection
-4. Impact analysis
-   - traces a schema change to likely affected applications
+   - scan a local repository or download a public GitHub repository archive for supported static SQL and ORM table references
+   - associate Python Flask SQL references with recognizable route methods, paths, and handler names
+   - record relative source paths, query evidence, and detector confidence
+3. Impact matching
+   - match changed table/column names against registrations for the requested database
+   - return the applications, dependency type, evidence, confidence, and schema risk
 
 This design keeps discovery conservative and explainable rather than pretending to infer every runtime relation.
 
@@ -209,12 +208,12 @@ The project exposes several API routes.
 - POST /api/v1/schema/diff
   - Compare old and new SQL and return risk summary and schema changes
 - POST /api/v1/schema/diff-with-impact
-  - Returns diff results plus application impact and migration plan
+  - Requires `databaseName`; returns diff results, matching application evidence, a numeric risk-score breakdown, and migration plan
 
 ### Dependency APIs
 
 - POST /api/v1/dependencies/applications
-  - Register an application
+  - Register or update an application and the database it uses
 - GET /api/v1/dependencies/applications
   - List registered applications
 - POST /api/v1/dependencies/entries
@@ -222,7 +221,101 @@ The project exposes several API routes.
 - GET /api/v1/dependencies/entries
   - List dependency entries
 - POST /api/v1/dependencies/scan
-  - Scan a repository path for likely SQL references
+  - Scan a local folder or a public GitHub repository URL for likely SQL references, recording source evidence and recognizable Flask routes against an application
+
+### End-to-end dependency test
+
+Start the backend and frontend, open the UI, and expand **Register an application dependency**. Enter an application ID, display name, database, and either a local repository folder path or a public GitHub repository root URL, then select **Register and scan repository**. Private GitHub repositories and links to subfolders are not supported. For a Flask repository, discovered SQL references are associated with route methods, paths, and handler names when the query is inside a decorated route function. Analyze the schema change to see the application and its affected API/source evidence under **Potentially affected applications**.
+
+For manual registration instead, fill in the application, database, table, and (optionally) a column, then select **Save dependency**. For example:
+
+- Application ID: `orders-api`
+- Application name: `Orders API`
+- Database: `commerce`
+- Table: `customers`
+- Column: `email`
+- Usage: `Reads`
+
+Then analyze these schemas:
+
+```sql
+-- Old schema
+CREATE TABLE customers (
+    id BIGINT NOT NULL,
+    email VARCHAR(255),
+    PRIMARY KEY (id)
+);
+```
+
+```sql
+-- Proposed schema
+CREATE TABLE customers (
+    id BIGINT NOT NULL,
+    PRIMARY KEY (id)
+);
+```
+
+The impact report should show `Orders API`, the `customers.email` dependency, its source/evidence and confidence, and a numeric risk score. Register a second application against a different table and verify it is not listed for this change. A table-level dependency (leave the column blank) should match any changed column on that table.
+
+The same workflow can be exercised through the API:
+
+```powershell
+$base = "http://localhost:8080/api/v1"
+$app = @{
+  applicationId = "orders-api"
+  name = "Orders API"
+  databaseName = "commerce"
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri "$base/dependencies/applications" `
+  -ContentType "application/json" -Body $app
+
+$dependency = @{
+  applicationId = "orders-api"
+  tableName = "customers"
+  columnName = "email"
+  dependencyType = "READ"
+  source = "src/CustomerRepository.java"
+  evidence = "SELECT email FROM customers"
+  confidence = "HIGH"
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri "$base/dependencies/entries" `
+  -ContentType "application/json" -Body $dependency
+
+$comparison = @{
+  databaseName = "commerce"
+  oldSql = "CREATE TABLE customers (id BIGINT NOT NULL, email VARCHAR(255), PRIMARY KEY (id));"
+  newSql = "CREATE TABLE customers (id BIGINT NOT NULL, PRIMARY KEY (id));"
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri "$base/schema/diff-with-impact" `
+  -ContentType "application/json" -Body $comparison
+```
+
+For automatic discovery, first register the application, then call `POST /api/v1/dependencies/scan` with `applicationId` and either a local path accessible to the backend or a public GitHub repository root URL:
+
+```json
+{
+  "applicationId": "orders-api",
+  "repositoryPath": "https://github.com/owner/orders-api"
+}
+```
+
+The scanner records likely table references from supported SQL/source files with the file path and medium confidence. GitHub scanning is restricted to public repository root URLs and bounded archive sizes. Flask route attribution is heuristic and only recognizes straightforward route decorators and SQL references within the decorated function. Review scan results; dynamic SQL and other framework-specific behavior may not be discovered.
+
+### Numeric risk score
+
+`/api/v1/schema/diff-with-impact` returns a `riskScore` breakdown in addition to the existing categorical schema risk:
+
+- Highest schema-change severity: LOW = 25, MEDIUM = 55, HIGH = 80
+- Dependency exposure: 3 points per distinct affected application, capped at 15
+- Dependency confidence: average confidence contributes up to 10 points (LOW = 2.5, rounded to 3; MEDIUM = 6; HIGH = 10)
+- Final score is capped at 100; no schema changes produce 0
+
+This is a transparent heuristic, not a probability of failure. The existing `/diff` endpoint and its response remain unchanged.
+
+The registry is currently in-memory: registrations and scan evidence last only until the backend process restarts. For production use, persist the registry and protect the repository scan endpoint with authentication and an explicit filesystem access policy.
 
 ## Example data flow
 
@@ -233,8 +326,8 @@ A typical migration review can look like this:
 3. Backend parses both SQL inputs
 4. Diff engine compares the schema objects and identifies changes
 5. Risk classifier applies risk and recommendation rules
-6. Dependency graph and repository scanner identify likely dependent apps
-7. Impact service connects schema changes to applications and evidence
+6. Registry evidence and repository scanner identify likely dependent apps and (for supported Flask patterns) API routes
+7. Impact service matches each schema change against table/column dependencies
 8. API returns:
    - diff result
    - impacted applications
@@ -256,7 +349,7 @@ It currently provides:
 - recommendations panel
 - impacted app summary
 - migration plan
-- graceful fallback to the original diff when needed
+- grouped affected applications and scanned API/source evidence
 
 ## Testing and validation
 
@@ -298,7 +391,7 @@ SchemaGuard is strong for reviewable, explicit DDL differences, but it still has
 - repository scanning is heuristic, not full semantic code analysis
 - dynamic SQL generation is not fully resolved by static detection
 - framework-specific patterns may be missed unless explicitly supported
-- graph confidence is evidence-based and not definitive
+- dependency confidence is evidence-based and not definitive
 - production deployment safety still requires human review and validation
 
 These limitations are treated as explicit constraints rather than hidden assumptions.
