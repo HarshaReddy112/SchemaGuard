@@ -115,7 +115,7 @@ public class DependencyScanService {
 
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) {
-                    if (attributes.isSymbolicLink() || !attributes.isRegularFile() || shouldSkip(file) || !isSupportedFile(file)) {
+                    if (attributes.isSymbolicLink() || !attributes.isRegularFile() || !isSupportedFile(file)) {
                         return FileVisitResult.CONTINUE;
                     }
                     if (scannedFiles[0] >= MAX_FILES) {
