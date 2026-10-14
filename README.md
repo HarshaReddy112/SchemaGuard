@@ -361,8 +361,8 @@ To commit and push from the repository root:
 
 ```powershell
 cd C:\Users\harsh\SchemaGuard
-git add .
-git commit -m "docs: add project README and architecture overview" -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+git add README.md .gitignore
+git commit -m "docs: update project documentation"
 git push origin HEAD
 ```
 
