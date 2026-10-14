@@ -3,13 +3,15 @@ package com.schemaguard.model;
 public record ApplicationImpact(
         String applicationId,
         String applicationName,
-        String changedTable,
-        String changedColumn,
+        String databaseName,
+        String tableName,
+        String columnName,
         String dependencyType,
-        String sourceEvidence,
+        String apiEndpoint,
+        String source,
+        String evidence,
         String confidence,
-        String riskInherited,
-        String reason,
-        String recommendedAction
+        String schemaChangeType,
+        String changeRisk
 ) {
 }

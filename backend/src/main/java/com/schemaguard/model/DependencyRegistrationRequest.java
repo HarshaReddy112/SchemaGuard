@@ -7,6 +7,7 @@ public record DependencyRegistrationRequest(
         String dependencyType,
         String source,
         String evidence,
-        String confidence
+        String confidence,
+        String apiEndpoint
 ) {
 }

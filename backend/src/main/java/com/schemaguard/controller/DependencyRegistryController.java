@@ -9,44 +9,45 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/dependencies")
 public class DependencyRegistryController {
 
-    private final DependencyRegistryService registryService;
+    private final DependencyRegistryService registry;
 
-    public DependencyRegistryController(DependencyRegistryService registryService) {
-        this.registryService = registryService;
+    public DependencyRegistryController(DependencyRegistryService registry) {
+        this.registry = registry;
     }
 
     @PostMapping("/applications")
-    public ResponseEntity<Map<String, String>> registerApplication(
+    public ResponseEntity<List<ApplicationRegistrationRequest>> registerApplication(
             @RequestBody ApplicationRegistrationRequest request) {
-        registryService.registerApplication(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(registryService.getApplicationNames());
+        registry.registerApplication(request);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(registry.listApplications());
     }
 
     @GetMapping("/applications")
-    public ResponseEntity<Map<String, String>> listApplications() {
-        return ResponseEntity.ok(registryService.getApplicationNames());
+    public ResponseEntity<List<ApplicationRegistrationRequest>> listApplications() {
+        return ResponseEntity.ok(registry.listApplications());
     }
 
     @PostMapping("/entries")
     public ResponseEntity<List<ApplicationDependency>> registerDependency(
             @RequestBody DependencyRegistrationRequest request) {
-        registryService.registerDependency(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(registryService.listDependencies());
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(registry.registerDependency(request));
     }
 
     @GetMapping("/entries")
     public ResponseEntity<List<ApplicationDependency>> listDependencies() {
-        return ResponseEntity.ok(registryService.listDependencies());
+        return ResponseEntity.ok(registry.listDependencies());
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<String> handleValidationError(IllegalArgumentException exception) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(exception.getMessage());
+    public ResponseEntity<String> handleValidationError(
+            IllegalArgumentException exception) {
+        return ResponseEntity.badRequest().body(exception.getMessage());
     }
 }
