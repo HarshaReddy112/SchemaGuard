@@ -527,6 +527,117 @@
     font-size: 12px;
 }
 
+.impact-layout {
+    display: grid;
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+    gap: 18px;
+    padding: 23px;
+}
+
+.impact-graph {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    align-content: center;
+    padding: 18px;
+    border: 1px solid #e7ebf3;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #f6f8ff, #fafbff);
+}
+
+.dependency-node {
+    padding: 12px 14px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    text-align: center;
+}
+
+.app-node {
+    color: #2f4bdc;
+    background: #eaf0ff;
+}
+
+.table-node {
+    color: #8b5d1f;
+    background: #fff1d8;
+}
+
+.risk-node {
+    color: #16704a;
+    background: #e6f9ef;
+}
+
+.dependency-line {
+    width: 2px;
+    height: 18px;
+    margin: 0 auto;
+    background: linear-gradient(to bottom, #c7d0ff, #d7d9ee);
+}
+
+.impact-list {
+    display: grid;
+    gap: 14px;
+}
+
+.impact-card {
+    padding: 16px 18px;
+    border: 1px solid #edf0f6;
+    border-radius: 12px;
+    background: #fafbfe;
+}
+
+.impact-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.impact-header strong {
+    font-size: 13px;
+    color: #2a3347;
+}
+
+.impact-card p {
+    margin: 0 0 12px;
+    color: #677486;
+    font-size: 12px;
+}
+
+.impact-card ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 8px;
+}
+
+.impact-card li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    color: #68758a;
+    font-size: 11px;
+}
+
+.impact-card li strong {
+    font-size: 11px;
+    color: #39435c;
+    text-align: right;
+}
+
+.migration-plan {
+    margin: 0;
+    padding: 23px 23px 23px 38px;
+    display: grid;
+    gap: 12px;
+    color: #49556d;
+    font-size: 13px;
+    line-height: 1.7;
+}
+
 .recommendation-list {
     display: flex;
     flex-direction: column;
@@ -643,6 +754,10 @@
 
     .risk-card small {
         line-height: 1.5;
+    }
+
+    .impact-layout {
+        grid-template-columns: 1fr;
     }
 
     .overall-card {

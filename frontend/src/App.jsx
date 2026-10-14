@@ -21,6 +21,7 @@ function App() {
     const [oldSql, setOldSql] = useState(initialOldSql);
     const [newSql, setNewSql] = useState(initialNewSql);
     const [report, setReport] = useState(null);
+    const [impactData, setImpactData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [riskFilter, setRiskFilter] = useState("ALL");
@@ -35,9 +36,10 @@ function App() {
         setLoading(true);
         setError("");
         setReport(null);
+        setImpactData(null);
 
         try {
-            const response = await fetch(API_URL, {
+            let response = await fetch("http://localhost:8080/api/v1/schema/diff-with-impact", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json"
@@ -46,12 +48,27 @@ function App() {
             });
 
             if (!response.ok) {
+                response = await fetch(API_URL, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ oldSql, newSql })
+                });
+            }
+
+            if (!response.ok) {
                 const message = await response.text();
                 throw new Error(message || "Migration analysis failed.");
             }
 
             const data = await response.json();
-            setReport(data);
+            const normalizedReport = data.diffResult ?? data;
+            setReport(normalizedReport);
+            setImpactData(data.impacts ? {
+                impacts: data.impacts,
+                migrationPlan: data.migrationPlan || normalizedReport.recommendations || []
+            } : null);
         } catch (err) {
             setError(
                 err.message.includes("fetch")
@@ -65,6 +82,7 @@ function App() {
 
     function clearReport() {
         setReport(null);
+        setImpactData(null);
         setError("");
     }
 
@@ -84,6 +102,11 @@ function App() {
               (riskOrder[b.riskLevel] ?? 3)
             : 0
     );
+
+    const impactItems = impactData?.impacts || [];
+    const migrationPlan = impactData?.migrationPlan && impactData.migrationPlan.length > 0
+        ? impactData.migrationPlan
+        : report?.recommendations || [];
 
     return (
         <div className="app-shell">
@@ -330,6 +353,62 @@ function App() {
         )}
     </>
 )}
+                        </div>
+
+                        {impactItems.length > 0 && (
+                            <div className="result-panel">
+                                <div className="panel-heading">
+                                    <div>
+                                        <h3>Application impact</h3>
+                                        <p>Dependencies tied to the changed schema objects</p>
+                                    </div>
+                                    <span className="recommendation-icon">↗</span>
+                                </div>
+
+                                <div className="impact-layout">
+                                    <div className="impact-graph" aria-label="Dependency graph preview">
+                                        <div className="dependency-node app-node">Applications</div>
+                                        <div className="dependency-line" />
+                                        <div className="dependency-node table-node">Tables / columns</div>
+                                        <div className="dependency-line" />
+                                        <div className="dependency-node risk-node">Risk impact</div>
+                                    </div>
+
+                                    <div className="impact-list">
+                                        {impactItems.map((impact, index) => (
+                                            <article className="impact-card" key={`${impact.applicationId || "manual"}-${impact.changedTable}-${index}`}>
+                                                <div className="impact-header">
+                                                    <strong>{impact.applicationName || "Manual review needed"}</strong>
+                                                    <span className={`risk-tag tag-${(impact.riskInherited || "LOW").toLowerCase()}`}>
+                                                        {impact.riskInherited || "LOW"}
+                                                    </span>
+                                                </div>
+                                                <p>{impact.changedTable}{impact.changedColumn ? ` / ${impact.changedColumn}` : ""}</p>
+                                                <ul>
+                                                    <li><span>Dependency</span><strong>{impact.dependencyType || "Unknown"}</strong></li>
+                                                    <li><span>Confidence</span><strong>{impact.confidence || "MEDIUM"}</strong></li>
+                                                    <li><span>Evidence</span><strong>{impact.sourceEvidence || "Not supplied"}</strong></li>
+                                                </ul>
+                                            </article>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="result-panel recommendations-panel">
+                            <div className="panel-heading">
+                                <div>
+                                    <h3>Migration plan</h3>
+                                    <p>Recommended staged validation and rollout steps</p>
+                                </div>
+                                <span className="recommendation-icon">✦</span>
+                            </div>
+                            <ol className="migration-plan">
+                                {migrationPlan.map((recommendation, index) => (
+                                    <li key={index}>{recommendation}</li>
+                                ))}
+                            </ol>
                         </div>
 
                         <div className="result-panel recommendations-panel">

@@ -46,16 +46,36 @@ public record SchemaDiffResult(
         }
 
         if (changes.stream().anyMatch(c -> "HIGH".equals(c.riskLevel()))) {
-            recommendations.add("Review all high-risk changes before deployment.");
-            recommendations.add("Back up the database and test the migration on a staging copy.");
+            recommendations.add("Review all high-risk changes before deployment and confirm the migration is staged safely.");
+            recommendations.add("Back up the database and validate the migration on a staging copy before production rollout.");
         }
 
-        if (changes.stream().anyMatch(c -> "REMOVED".equals(c.changeType()))) {
-            recommendations.add("Check application queries and data dependencies before removing database objects.");
+        if (changes.stream().anyMatch(c -> "COLUMN".equals(c.objectType())
+                && "REMOVED".equals(c.changeType()))) {
+            recommendations.add("Check application queries, stored procedures, and reporting logic before dropping columns because existing data may be lost.");
         }
 
-        if (changes.stream().anyMatch(c -> "MODIFIED".equals(c.changeType()))) {
-            recommendations.add("Check existing data and application compatibility before applying modifications.");
+        if (changes.stream().anyMatch(c -> "COLUMN".equals(c.objectType())
+                && "MODIFIED".equals(c.changeType())
+                && "nullable=false".equalsIgnoreCase(c.newValue()))) {
+            recommendations.add("Audit existing rows before enforcing NOT NULL; backfill or default missing values as needed to avoid failed writes.");
+        }
+
+        if (changes.stream().anyMatch(c -> "COLUMN".equals(c.objectType())
+                && "MODIFIED".equals(c.changeType())
+                && c.oldValue() != null
+                && c.newValue() != null
+                && !c.oldValue().equalsIgnoreCase(c.newValue()))) {
+            recommendations.add("Validate application compatibility and data conversion requirements before changing column definitions or lengths.");
+        }
+
+        if (changes.stream().anyMatch(c -> "PRIMARY_KEY".equals(c.objectType())
+                || "CONSTRAINT".equals(c.objectType()))) {
+            recommendations.add("Review foreign-key and primary-key dependencies before applying structural changes that affect joins or referential integrity.");
+        }
+
+        if (changes.stream().anyMatch(c -> "INDEX".equals(c.objectType()))) {
+            recommendations.add("Evaluate index build time and lock impact for large tables before adding or removing indexes in production.");
         }
 
         if (recommendations.isEmpty()) {

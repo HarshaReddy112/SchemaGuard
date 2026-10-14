@@ -9,11 +9,8 @@ import com.schemaguard.model.TableSchema;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.TreeSet;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class SchemaDiffEngine {
 
@@ -34,7 +31,8 @@ public class SchemaDiffEngine {
             if (oldTable == null) {
                 changes.add(new SchemaChange(
                         "TABLE", "ADDED", tableName, tableName,
-                        null, "TABLE", "LOW", "Table was added"
+                        null, "TABLE", SchemaRiskClassifier.tableAddedRisk(),
+                        "Table was added"
                 ));
                 continue;
             }
@@ -42,7 +40,8 @@ public class SchemaDiffEngine {
             if (newTable == null) {
                 changes.add(new SchemaChange(
                         "TABLE", "REMOVED", tableName, tableName,
-                        "TABLE", null, "HIGH", "Table was removed"
+                        "TABLE", null, SchemaRiskClassifier.tableRemovedRisk(),
+                        "Table was removed"
                 ));
                 continue;
             }
@@ -73,7 +72,8 @@ public class SchemaDiffEngine {
             if (oldColumn == null) {
                 changes.add(new SchemaChange(
                         "COLUMN", "ADDED", tableName, columnName,
-                        null, newColumn.dataType(), "LOW",
+                        null, newColumn.dataType(),
+                        SchemaRiskClassifier.columnAddedRisk(newColumn.nullable()),
                         "Column was added"
                 ));
                 continue;
@@ -82,7 +82,8 @@ public class SchemaDiffEngine {
             if (newColumn == null) {
                 changes.add(new SchemaChange(
                         "COLUMN", "REMOVED", tableName, columnName,
-                        oldColumn.dataType(), null, "HIGH",
+                        oldColumn.dataType(), null,
+                        SchemaRiskClassifier.columnRemovedRisk(),
                         "Column was removed"
                 ));
                 continue;
@@ -106,19 +107,21 @@ public class SchemaDiffEngine {
             changes.add(new SchemaChange(
                     "COLUMN", "MODIFIED", tableName, columnName,
                     oldColumn.dataType(), newColumn.dataType(),
-                    typeRisk(oldColumn.dataType(), newColumn.dataType()),
+                    SchemaRiskClassifier.typeRisk(
+                            oldColumn.dataType(), newColumn.dataType()
+                    ),
                     "Column data type changed"
             ));
         }
 
         if (oldColumn.nullable() != newColumn.nullable()) {
-            boolean risky = !newColumn.nullable();
-
             changes.add(new SchemaChange(
                     "COLUMN", "MODIFIED", tableName, columnName,
                     "nullable=" + oldColumn.nullable(),
                     "nullable=" + newColumn.nullable(),
-                    risky ? "HIGH" : "LOW",
+                    SchemaRiskClassifier.nullabilityRisk(
+                            oldColumn.nullable(), newColumn.nullable()
+                    ),
                     "Column nullability changed"
             ));
         }
@@ -128,7 +131,8 @@ public class SchemaDiffEngine {
             changes.add(new SchemaChange(
                     "COLUMN", "MODIFIED", tableName, columnName,
                     oldColumn.defaultValue(), newColumn.defaultValue(),
-                    "MEDIUM", "Column default value changed"
+                    SchemaRiskClassifier.defaultValueRisk(),
+                    "Column default value changed"
             ));
         }
 
@@ -137,7 +141,8 @@ public class SchemaDiffEngine {
                     "COLUMN", "MODIFIED", tableName, columnName,
                     "autoIncrement=" + oldColumn.autoIncrement(),
                     "autoIncrement=" + newColumn.autoIncrement(),
-                    "MEDIUM", "Column auto-increment setting changed"
+                    SchemaRiskClassifier.autoIncrementRisk(),
+                    "Column auto-increment setting changed"
             ));
         }
     }
@@ -156,7 +161,8 @@ public class SchemaDiffEngine {
                     "PRIMARY_KEY", "MODIFIED", tableName, "PRIMARY",
                     String.join(", ", oldKey),
                     String.join(", ", newKey),
-                    "HIGH", "Primary key changed"
+                    SchemaRiskClassifier.primaryKeyRisk(),
+                    "Primary key changed"
             ));
         }
     }
@@ -188,19 +194,22 @@ public class SchemaDiffEngine {
                 changes.add(new SchemaChange(
                         "INDEX", "ADDED", tableName, name,
                         null, indexValue(newIndex),
-                        "LOW", "Index was added"
+                        SchemaRiskClassifier.indexAddedRisk(),
+                        "Index was added"
                 ));
             } else if (newIndex == null) {
                 changes.add(new SchemaChange(
                         "INDEX", "REMOVED", tableName, name,
                         indexValue(oldIndex), null,
-                        "MEDIUM", "Index was removed"
+                        SchemaRiskClassifier.indexRemovedRisk(),
+                        "Index was removed"
                 ));
             } else if (!indexValue(oldIndex).equals(indexValue(newIndex))) {
                 changes.add(new SchemaChange(
                         "INDEX", "MODIFIED", tableName, name,
                         indexValue(oldIndex), indexValue(newIndex),
-                        "MEDIUM", "Index definition changed"
+                        SchemaRiskClassifier.indexModifiedRisk(),
+                        "Index definition changed"
                 ));
             }
         }
@@ -235,13 +244,15 @@ public class SchemaDiffEngine {
                 changes.add(new SchemaChange(
                         "CONSTRAINT", "ADDED", tableName, name,
                         null, constraintValue(newConstraint),
-                        "MEDIUM", "Constraint was added"
+                        SchemaRiskClassifier.constraintAddedRisk(),
+                        "Constraint was added"
                 ));
             } else if (newConstraint == null) {
                 changes.add(new SchemaChange(
                         "CONSTRAINT", "REMOVED", tableName, name,
                         constraintValue(oldConstraint), null,
-                        "HIGH", "Constraint was removed"
+                        SchemaRiskClassifier.constraintRemovedRisk(),
+                        "Constraint was removed"
                 ));
             } else if (!constraintValue(oldConstraint)
                     .equals(constraintValue(newConstraint))) {
@@ -249,7 +260,8 @@ public class SchemaDiffEngine {
                         "CONSTRAINT", "MODIFIED", tableName, name,
                         constraintValue(oldConstraint),
                         constraintValue(newConstraint),
-                        "HIGH", "Constraint definition changed"
+                        SchemaRiskClassifier.constraintModifiedRisk(),
+                        "Constraint definition changed"
                 ));
             }
         }
@@ -267,63 +279,4 @@ public class SchemaDiffEngine {
                 + "(" + String.join(", ", constraint.referencedColumns()) + ")";
     }
 
-    private String typeRisk(String oldType, String newType) {
-        String oldUpper = oldType.trim().toUpperCase(Locale.ROOT);
-        String newUpper = newType.trim().toUpperCase(Locale.ROOT);
-
-        if (oldUpper.contains("UNSIGNED")
-                != newUpper.contains("UNSIGNED")) {
-            return "HIGH";
-        }
-
-        String oldBase = baseType(oldUpper);
-        String newBase = baseType(newUpper);
-
-        if (oldBase.equals(newBase)) {
-            Integer oldSize = extractSize(oldUpper);
-            Integer newSize = extractSize(newUpper);
-
-            if (oldSize != null && newSize != null) {
-                return newSize < oldSize ? "HIGH" : "LOW";
-            }
-
-            return "MEDIUM";
-        }
-
-        int oldRank = integerRank(oldBase);
-        int newRank = integerRank(newBase);
-
-        if (oldRank > 0 && newRank > 0) {
-            return newRank > oldRank ? "LOW" : "HIGH";
-        }
-
-        return "MEDIUM";
-    }
-
-    private int integerRank(String type) {
-        return switch (type) {
-            case "TINYINT" -> 1;
-            case "SMALLINT" -> 2;
-            case "MEDIUMINT" -> 3;
-            case "INT", "INTEGER" -> 4;
-            case "BIGINT" -> 5;
-            default -> 0;
-        };
-    }
-
-    private Integer extractSize(String type) {
-        Matcher matcher = Pattern.compile("\\((\\d+)\\)").matcher(type);
-
-        if (matcher.find()) {
-            return Integer.parseInt(matcher.group(1));
-        }
-
-        return null;
-    }
-
-    private String baseType(String type) {
-        return type.replaceAll("\\s*\\(.*", "")
-                .replaceAll("\\s+UNSIGNED\\b", "")
-                .trim();
-    }
 }
