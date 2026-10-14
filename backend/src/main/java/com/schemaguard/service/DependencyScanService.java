@@ -42,7 +42,7 @@ public class DependencyScanService {
     );
 
     private static final Pattern SELECT_PROJECTION_PATTERN = Pattern.compile(
-            "(?is)\\bSELECT\\s+(?:DISTINCT\\s+)?(.*?)\\s+FROM\\s+[\\x60\\x22\\x27]?([A-Za-z0-9_]+)[\\x60\\x22\\x27]?(?=\\s+(?:WHERE\\b|GROUP\\s+BY\\b|ORDER\\s+BY\\b|HAVING\\b|LIMIT\\b)|\\s*;|\\s*$)"
+            "(?is)\\bSELECT\\s+(?:DISTINCT\\s+)?(.*?)\\s+FROM\\s+[\\x60\\x22\\x27]?([A-Za-z0-9_]+)[\\x60\\x22\\x27]?(?=\\s+(?:WHERE\\b|GROUP\\s+BY\\b|ORDER\\s+BY\\b|HAVING\\b|LIMIT\\b)|\\s*;|[\\x22\\x27]|\\s*$)"
     );
 
     private static final Pattern SIMPLE_COLUMN_PATTERN = Pattern.compile(
