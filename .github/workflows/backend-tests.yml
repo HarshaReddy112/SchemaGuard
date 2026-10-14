@@ -1,0 +1,50 @@
+name: Backend tests
+
+on:
+  push:
+    branches:
+      - main
+      - feature/multi-repository-impact-analysis
+      - feature/visual-schema-comparison
+      - develop
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-tests.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-tests.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: rootpass
+          MYSQL_DATABASE: schemaguard
+          MYSQL_USER: schemaguard_app
+          MYSQL_PASSWORD: tiger
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -prootpass"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DB_URL: jdbc:mysql://127.0.0.1:3306/schemaguard?useSSL=false&serverTimezone=UTC
+      DB_USERNAME: schemaguard_app
+      DB_PASSWORD: tiger
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Run backend tests
+        run: mvn -B -ntp -f backend/pom.xml clean test

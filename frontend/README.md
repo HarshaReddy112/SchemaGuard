@@ -1,16 +1,23 @@
-# React + Vite
+# SchemaGuard Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This frontend provides the migration-risk workflow for the SchemaGuard analyzer.
 
-Currently, two official plugins are available:
+## Local setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. Install dependencies:
+   npm install
+2. Start the Vite development server:
+   npm run dev
+3. Ensure the backend is running on http://localhost:8080 before analyzing migrations.
 
-## React Compiler
+## Supported workflow
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Paste an old and new SQL schema into the two editors.
+- Click Analyze Migration to call the schema diff API.
+- Review risk summary, high-risk changes, and migration-plan guidance.
+- If the impact-aware API is unavailable, the UI falls back to the base diff endpoint without failing the workflow.
 
-## Expanding the ESLint configuration
+## Notes
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- The app expects a Spring Boot backend from this repository.
+- The analysis remains conservative and additive: unsupported SQL is explicitly rejected by the backend, and the UI surfaces the response rather than guessing at migration safety.

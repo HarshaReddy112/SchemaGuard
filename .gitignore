@@ -21,7 +21,7 @@ pnpm-debug.log*
 .idea/
 *.iml
 
-# Operating system files
+# Operating-system files
 .DS_Store
 Thumbs.db
 Desktop.ini
