@@ -14,10 +14,7 @@ import java.util.Set;
 public class ApplicationImpactAnalysisService {
 
     public List<ApplicationImpact> analyzeImpact(SchemaDiffResult diffResult, DependencyGraphService graphService) {
-        if (diffResult == null || diffResult.changes() == null) {
-            return List.of();
-        }
-        if (graphService == null) {
+        if (diffResult == null || diffResult.changes() == null || graphService == null) {
             return List.of();
         }
 
@@ -27,7 +24,7 @@ public class ApplicationImpactAnalysisService {
             String objectName = change.objectName();
             List<String> dependentApplications = new ArrayList<>();
 
-            if (change.objectType() != null && "COLUMN".equals(change.objectType())
+            if ("COLUMN".equals(change.objectType())
                     && objectName != null && !objectName.isBlank()) {
                 dependentApplications.addAll(graphService.findDependentApplications(tableName, objectName));
             }
@@ -43,10 +40,10 @@ public class ApplicationImpactAnalysisService {
                         objectName,
                         null,
                         null,
-                        "LOW",
+                        "UNKNOWN",
                         change.riskLevel(),
-                        "No direct application dependency was discovered for this schema change; review manually.",
-                        "Validate the change against application SQL, ORM mappings, and integration tests before deployment."
+                        "No direct application dependency was discovered for this schema change; this does not prove that no dependency exists.",
+                        "Review all registered repositories, dynamic SQL, ORM mappings, stored procedures, and integration tests before deployment."
                 ));
                 continue;
             }
@@ -59,17 +56,21 @@ public class ApplicationImpactAnalysisService {
                 DependencyGraphNode applicationNode = graphService.getNodes().get(applicationId);
                 String applicationName = applicationNode == null ? applicationId : applicationNode.name();
                 DependencyGraphEdge edge = graphService.findEdgeFromApplicationToObject(applicationId, tableName, objectName);
+                if (edge == null && "COLUMN".equals(change.objectType())) {
+                    edge = graphService.findEdgeFromApplicationToObject(applicationId, tableName, null);
+                }
+
                 impacts.add(new ApplicationImpact(
                         applicationId,
                         applicationName,
                         tableName,
                         objectName,
-                        edge == null ? "READ" : edge.type(),
-                        edge == null ? "manual registry" : edge.evidence(),
-                        edge == null ? "MEDIUM" : edge.confidence(),
+                        edge == null ? "USES" : edge.type(),
+                        edge == null ? null : edge.evidence(),
+                        edge == null ? "UNKNOWN" : edge.confidence(),
                         change.riskLevel(),
-                        "The application is connected to the affected table or column through dependency evidence.",
-                        "Review impacted application queries and run migration validation before rollout."
+                        "Static or registered dependency evidence connects this application to the affected table or column.",
+                        "Review the cited source reference, update the dependent component if needed, and run migration validation before rollout."
                 ));
             }
         }
