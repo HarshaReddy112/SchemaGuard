@@ -2,6 +2,7 @@ package com.schemaguard.controller;
 
 import com.schemaguard.diff.SchemaDiffEngine;
 import com.schemaguard.diff.SchemaDiffResult;
+import com.schemaguard.model.ApplicationDependency;
 import com.schemaguard.model.ApplicationImpact;
 import com.schemaguard.model.DatabaseSchema;
 import com.schemaguard.model.SchemaDiffRequest;
@@ -9,6 +10,7 @@ import com.schemaguard.model.SchemaImpactResponse;
 import com.schemaguard.parser.MySqlSchemaParser;
 import com.schemaguard.service.ApplicationImpactAnalysisService;
 import com.schemaguard.service.DependencyGraphService;
+import com.schemaguard.service.DependencyRegistryService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -25,6 +27,11 @@ public class SchemaDiffController {
     private final MySqlSchemaParser parser = new MySqlSchemaParser();
     private final SchemaDiffEngine engine = new SchemaDiffEngine();
     private final ApplicationImpactAnalysisService impactAnalysisService = new ApplicationImpactAnalysisService();
+    private final DependencyRegistryService registryService;
+
+    public SchemaDiffController(DependencyRegistryService registryService) {
+        this.registryService = registryService;
+    }
 
     @PostMapping("/diff")
     public ResponseEntity<SchemaDiffResult> compareSchemas(
@@ -46,7 +53,7 @@ public class SchemaDiffController {
         DatabaseSchema newSchema = parser.parse(request.newSql());
 
         SchemaDiffResult diffResult = engine.compare(oldSchema, newSchema);
-        DependencyGraphService graph = buildDependencyGraph(diffResult);
+        DependencyGraphService graph = buildDependencyGraph();
         List<ApplicationImpact> impacts = impactAnalysisService.analyzeImpact(diffResult, graph);
         List<String> migrationPlan = buildMigrationPlan(diffResult, impacts);
 
@@ -82,30 +89,20 @@ public class SchemaDiffController {
         }
     }
 
-    private DependencyGraphService buildDependencyGraph(SchemaDiffResult diffResult) {
+    private DependencyGraphService buildDependencyGraph() {
         DependencyGraphService graph = new DependencyGraphService();
+        List<ApplicationDependency> dependencies = registryService.listDependencies();
 
-        graph.addNode("app:billing", "APPLICATION", "Billing");
-        graph.addNode("app:inventory", "APPLICATION", "Inventory");
-        graph.addNode("app:analytics", "APPLICATION", "Analytics");
-
-        for (var change : diffResult.changes()) {
-            String tableName = change.tableName();
-            if (tableName == null || tableName.isBlank()) {
-                continue;
-            }
-
-            graph.addNode("table:" + tableName, "TABLE", tableName);
-            graph.addEdge("app:billing", "table:" + tableName, "READ", "dependency graph seed", "MEDIUM");
-            graph.addEdge("app:inventory", "table:" + tableName, "WRITE", "dependency graph seed", "MEDIUM");
-
-            if (change.objectType() != null && "COLUMN".equals(change.objectType())) {
-                String columnName = change.objectName();
-                if (columnName != null && !columnName.isBlank()) {
-                    graph.addNode("column:" + tableName + "." + columnName, "COLUMN", columnName);
-                    graph.addEdge("app:analytics", "column:" + tableName + "." + columnName, "READ", "dependency graph seed", "LOW");
-                }
-            }
+        for (ApplicationDependency dependency : dependencies) {
+            graph.addApplicationDependency(
+                    dependency.applicationId(),
+                    dependency.applicationName(),
+                    dependency.tableName(),
+                    dependency.columnName(),
+                    dependency.dependencyType(),
+                    dependency.source() + ": " + dependency.detector() + ": " + dependency.evidence(),
+                    dependency.confidence()
+            );
         }
 
         return graph;
