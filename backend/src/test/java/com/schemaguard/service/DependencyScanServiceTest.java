@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class DependencyScanServiceTest {
 
     @Test
-    void scansJavaSqlReferencesInRepository() throws Exception {
+    void scansJavaSqlReferencesAndSelectColumnsInRepository() throws Exception {
         Path tempDir = Files.createTempDirectory("schemaguard-scan");
         Path appDir = tempDir.resolve("app");
         Files.createDirectories(appDir);
@@ -24,9 +24,14 @@ class DependencyScanServiceTest {
 
         DependencyScanResult result = new DependencyScanService().scanRepository(appDir.toString());
 
-        assertEquals(2, result.evidence().size());
-        assertTrue(result.evidence().stream().anyMatch(e -> e.tableName().equals("users")));
-        assertTrue(result.evidence().stream().anyMatch(e -> e.tableName().equals("orders")));
+        assertTrue(result.evidence().stream().anyMatch(e ->
+                "users".equals(e.tableName()) && "static-sql-pattern".equals(e.detector())));
+        assertTrue(result.evidence().stream().anyMatch(e ->
+                "users".equals(e.tableName())
+                        && "email".equals(e.columnName())
+                        && "static-select-projection".equals(e.detector())));
+        assertTrue(result.evidence().stream().anyMatch(e ->
+                "orders".equals(e.tableName()) && "static-sql-pattern".equals(e.detector())));
     }
 
     @Test
@@ -49,6 +54,49 @@ class DependencyScanServiceTest {
         assertTrue(result.evidence().stream().anyMatch(e -> e.tableName().equals("orders")));
         assertTrue(result.evidence().stream().anyMatch(e -> e.tableName().equals("invoices")));
         assertTrue(result.evidence().stream().anyMatch(e -> e.tableName().equals("users")));
+    }
+
+    @Test
+    void associatesJpaColumnWithItsExplicitTableMapping() throws Exception {
+        Path tempDir = Files.createTempDirectory("schemaguard-jpa-columns");
+        Path appDir = Files.createDirectories(tempDir.resolve("app"));
+
+        Files.writeString(appDir.resolve("UserEntity.java"),
+                "@Entity\n"
+                        + "@Table(name = \"users\")\n"
+                        + "class UserEntity {\n"
+                        + "    @Column(name = \"email\")\n"
+                        + "    String email;\n"
+                        + "}\n",
+                java.nio.charset.StandardCharsets.UTF_8);
+
+        DependencyScanResult result = new DependencyScanService().scanRepository(appDir.toString());
+
+        assertTrue(result.evidence().stream().anyMatch(e ->
+                "users".equals(e.tableName())
+                        && "email".equals(e.columnName())
+                        && "jpa-column-annotation".equals(e.detector())
+                        && "HIGH".equals(e.confidence())));
+    }
+
+    @Test
+    void ignoresSqlReferencesInsideSourceComments() throws Exception {
+        Path tempDir = Files.createTempDirectory("schemaguard-comments");
+        Path appDir = Files.createDirectories(tempDir.resolve("app"));
+
+        Files.writeString(appDir.resolve("Example.java"),
+                "// SELECT id FROM fake_line_table;\n"
+                        + "String sql = \"SELECT id, email FROM users\";\n"
+                        + "/* SELECT id FROM fake_block_table; */\n",
+                java.nio.charset.StandardCharsets.UTF_8);
+
+        DependencyScanResult result = new DependencyScanService().scanRepository(appDir.toString());
+
+        assertTrue(result.evidence().stream().anyMatch(e -> "users".equals(e.tableName())));
+        assertFalse(result.evidence().stream().anyMatch(e -> "fake_line_table".equals(e.tableName())));
+        assertFalse(result.evidence().stream().anyMatch(e -> "fake_block_table".equals(e.tableName())));
+        assertTrue(result.evidence().stream().anyMatch(e ->
+                "users".equals(e.tableName()) && "email".equals(e.columnName())));
     }
 
     @Test
